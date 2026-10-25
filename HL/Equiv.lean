@@ -22,7 +22,7 @@ This chapter develops a notion of _behavioral equivalence_ for {ref "Imp"}[Imp]'
 expressions and commands.
 
 ::::full
-To illustrate it use, we verify
+To illustrate its use, we verify
 that program transformations such as constant folding preserve
 behavior. Along the way we also see techniques for proving that two
 programs are _not_ equivalent. Finally, we close with an extended look at
