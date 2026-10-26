@@ -2370,7 +2370,7 @@ theorem preservation {δ : StoreTy} {t t' : Tm} {τ : Ty} {ρ ρ' : Store}
               simp_all [StoreWellTyped, MyGetElem.getElem]
             rw [h]
             constructor
-            simp; lia
+            simp [StoreWellTyped] at hStoreTy ⊢; lia
           · apply store_well_typed_app <;> assumption
       | ref_ hs =>
         have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih hs rfl
