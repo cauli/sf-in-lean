@@ -21,7 +21,6 @@ import TS.Smallstep
 open Verso.Genre Manual
 open SFLMeta
 
-open InlineLean hiding lean
 
 #doc (Manual) "Types: Type Systems" =>
 %%%
