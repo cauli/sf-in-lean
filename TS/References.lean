@@ -37,7 +37,7 @@ Thus, the following does not work unless the variable `x` is renamed.
 fact = λx : Nat , (λr : Ref (Nat → Nat) ,
   r := λx : Nat , if x == 0 then 1 else x * !r (pred x);
   !r x) (ref (λx : Nat , 0))
-    ```
+```
 
 For the TERSE version, there are a bunch of slides in the
 two 2006 Chapter 13 lectures that would be great to include
@@ -159,7 +159,7 @@ _dereferencing_, and _assignment_.
   `5` and reduces to a reference to that cell.
 
 - To read the current value of this cell, we use the
-  dereferencing operator [!].
+  dereferencing operator `!`.
 
   For example, `!(ref 5)` reduces to `5`.
 
@@ -241,6 +241,8 @@ scoped syntax:60 "ref " stlcTm:61 : stlcTm
 scoped syntax:60 "loc " stlcTm:61 : stlcTm
 scoped syntax:60 "!" stlcTm:61 : stlcTm
 scoped syntax:55 stlcTm:56 " ; " stlcTm:55 : stlcTm
+
+scoped syntax stlcCtx " / " term:max " ⊢ " stlcTm " ⦂ " stlcTy : stlcQuoted
 
 abbrev Tm.tseq t₁ t₂ :=
   Tm.app (.abs "X" .unit t₂) t₁
@@ -344,12 +346,28 @@ partial def elabTm : TmElab :=
 
 def elabCtx : CtxElab := elabCtxCommon language elabTy
 
+-- `HasType` takes the store typing as an extra first argument,
+-- so we build typing judgments here instead of in `elabQuoted`.
+def mkHasType (δ Γ t T : Expr) : TermElabM Expr := do
+  let some hasType ← resolveId? (mkIdent language.hasType)
+    | throwError "unknown declaration `{language.hasType}`"
+  return mkApp4 hasType δ Γ t T
+
 @[scoped term_elab StlcCommon.bracket]
 def elabBracket : TermElab :=
   fun stx expectedType? => do
-    let `(<{ $q:stlcQuoted }>) := stx
-      | throwUnsupportedSyntax
-    elabQuoted language elabTy elabTm elabCtx q expectedType?
+    match stx with
+    | `(<{ $Γ:stlcCtx / $δ:term ⊢ $t:stlcTm ⦂ $T:stlcTy }>) => do
+        let (Γ, scope) ← elabCtx Γ
+        let (t, _) ← elabTm scope [] t
+        let T ← elabTy T
+        let δ ← elabTermEnsuringType δ (mkApp (mkConst ``List [levelZero]) (mkConst ``Ty))
+        mkHasType δ Γ t T
+    | `(<{ $_:stlcCtx ⊢ $_:stlcTm ⦂ $_:stlcTy }>) =>
+        throwError "typing judgments need a store typing: write `Γ / δ ⊢ t ⦂ τ`"
+    | `(<{ $q:stlcQuoted }>) =>
+        elabQuoted language elabTy elabTm elabCtx q expectedType?
+    | _ => throwUnsupportedSyntax
 
 end Elab
 
@@ -595,7 +613,7 @@ assignment look roughly like this:
 
                         Γ ⊢ t₁ ⦂ Ref τ₁
                         -------------------                   (deref)
-                          Γ ⊢ !t1 ⦂ τ₁
+                          Γ ⊢ !t₁ ⦂ τ₁
 
                         Γ ⊢ t₁ ⦂ Ref τ₂
                           Γ ⊢ t₂ ⦂ τ₂
@@ -1131,15 +1149,16 @@ the store.)
 ::::terse
 A store is just a _list_ of values.  (This more concrete
 representation will be more convenient for proofs than the
-functional representation we used in Imp.)
+functional representation we used in Imp.) We will use the greek letter ρ
+to represent stores.
 ::::
 
 ```lean
-def Store := List Tm
+abbrev Store := List Tm
 ```
 
-We use `st[n]` to retrieve the value of the reference
-cell at location `n` in the store `st`.  Note that we must give a
+We use `ρ[n]` to retrieve the value of the reference
+cell at location `n` in the store `ρ`.  Note that we must give a
 default value to `nth` in case we try looking up an index which is
 too large. (In fact, we never actually do this, but _proving_
 that we don't will require a bit of work.)
@@ -1148,7 +1167,15 @@ that we don't will require a bit of work.)
 ```lean
 open scoped MyGetElem
 instance : MyGetElem Store Nat Tm where
-  getElem st n := st.getD n <{unit}>
+  getElem ρ n := ρ.getD n <{unit}>
+
+@[simp]
+theorem Store_get_succ_tl (hd : Tm) (tl : Store) (n : Nat) :
+  (hd :: tl)[n + 1] = tl[n] := by rfl
+
+@[simp]
+theorem Store_get_zero_hd (hd : Tm) (tl : Store) :
+  (hd :: tl)[0] = hd := by rfl
 ```
 
 To update the store, we use the {lean}`List.set` function, which replaces
@@ -1168,46 +1195,46 @@ First, we augment existing reduction rules with stores:
 ```display
                               v₂.IsValue
                 -------------------------------------               (appAbs)
-                (λx:τ₂. t₁) v₂ / st ⟶ [x:=v₂] t₁ / st
+                (λx:τ₂. t₁) v₂ / ρ ⟶ [x:=v₂] t₁ / ρ
 
-                        t₁ / st ⟶ t₁' / st'
+                        t₁ / ρ ⟶ t₁' / ρ'
                      ---------------------------                      (app₁)
-                     t₁ t₂ / st ⟶ t₁' t₂ / st'
+                     t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'
 
-                  v₁.IsValue     t₂ / st ⟶ t₂' / st'
+                  v₁.IsValue     t₂ / ρ ⟶ t₂' / ρ'
                   ----------------------------------                  (app₂)
-                     v₁ t₂ / st ⟶ v₁ t₂' / st'
+                     v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'
 ```
 
 Now we can give the rules for the new constructs:
 
 ```display
                    ------------------------------                  (refValue)
-                   ref v / st ⟶ loc st.length / st,v
+                   ref v / ρ ⟶ loc ρ.length / ρ,v
 
-                        t₁ / st ⟶ t₁' / st'
+                        t₁ / ρ ⟶ t₁' / ρ'
                     -----------------------------                    (ref)
-                    ref t₁ / st ⟶ ref t₁' / st'
+                    ref t₁ / ρ ⟶ ref t₁' / ρ'
 
-                               l < st.length
+                               l < ρ.length
                      ----------------------------------            (derefLoc)
-                     !(loc l) / st ⟶ st[l] / st
+                     !(loc l) / ρ ⟶ ρ[l] / ρ
 
-                        t₁ / st ⟶ t₁' / st'
+                        t₁ / ρ ⟶ t₁' / ρ'
                        -----------------------                       (deref)
-                       !t1 / st ⟶ !t₁' / st'
+                       !t₁ / ρ ⟶ !t₁' / ρ'
 
-                               l < st.length
+                               l < ρ.length
                 ------------------------------------------         (assign)
-                loc l := v / st ⟶ unit / List.set st l v
+                loc l := v / ρ ⟶ unit / List.set ρ l v
 
-                        t₁ / st ⟶ t₁' / st'
+                        t₁ / ρ ⟶ t₁' / ρ'
                  -----------------------------------               (assign₁)
-                 t₁ := t₂ / st ⟶ t₁' := t₂ / st'
+                 t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'
 
-                        t₂ / st ⟶ t₂' / st'
+                        t₂ / ρ ⟶ t₂' / ρ'
                  -----------------------------------               (assign₂)
-                 v₁ := t₂ / st ⟶ v₁ := t₂' / st'
+                 v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'
 ```
 ::::
 
@@ -1220,8 +1247,8 @@ also a store as argument.  Furthermore, since the reduction of a
 term can cause side effects on the store, and these may affect the
 reduction of other terms in the future, the reduction rules need
 to return a new store.  Thus, the shape of the single-step
-reduction relation needs to change from `t ⟶ t'` to `t / st ⟶ t' / st'`,
-where `st` and `st` are the starting and ending states of
+reduction relation needs to change from `t ⟶ t'` to `t / ρ ⟶ t' / ρ'`,
+where `ρ` and `ρ` are the starting and ending states of
 the store.
 
 To carry through this change, we first need to augment all of our
@@ -1230,15 +1257,15 @@ existing reduction rules with stores:
 ```display
                                value v₂
                 ------------------------------------- (appAbs)
-                (λx:τ₂,t₁) v₂ / st ⟶ [x:=v₂]t₁ / st
+                (λx:τ₂,t₁) v₂ / ρ ⟶ [x:=v₂]t₁ / ρ
 
-                        t₁ / st ⟶ t₁' / st'
+                        t₁ / ρ ⟶ t₁' / ρ'
                      --------------------------- (app₁)
-                     t₁ t₂ / st ⟶ t₁' t₂ / st'
+                     t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'
 
-                  value v₁     t₂ / st ⟶ t₂' / st'
+                  value v₁     t₂ / ρ ⟶ t₂' / ρ'
                   ---------------------------------- (app₂)
-                     v₁ t₂ / st ⟶ v₁ t₂' / st'
+                     v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'
 ```
 
 Note that the first rule here returns the store unchanged, since
@@ -1260,27 +1287,27 @@ locations to the set of allowed values might seem more obvious.
 
 In terms of this expanded syntax, we can state reduction rules
 for the new constructs that manipulate locations and the store.
-First, to reduce a dereferencing expression `!t1`, we must first
+First, to reduce a dereferencing expression `!t₁`, we must first
 reduce `t₁` until it becomes a value:
 
 ```display
-                        t₁ / st ⟶ t₁' / st'
+                        t₁ / ρ ⟶ t₁' / ρ'
                        --------------------- (deref)
-                       !t1 / st ⟶ !t₁' / st'
+                       !t₁ / ρ ⟶ !t₁' / ρ'
 ```
 Once `t₁` has finished reducing, we should have an expression of
 the form `!l`, where `l` is some location.  (A term that attempts
 to dereference any other sort of value, such as a function or
 `unit`, is erroneous, as is a term that tries to dereference a
-location that is larger than the size st.length of the currently
+location that is larger than the size ρ.length of the currently
 allocated store; the reduction rules simply get stuck in this
 case.  The type-safety properties established below assure us
 that well-typed terms will never misbehave in this way.)
 
 ```display
-                               l < st.length
+                               l < ρ.length
                      ---------------------------------- (derefLoc)
-                     !(loc l) / st ⟶ st[l] / st
+                     !(loc l) / ρ ⟶ ρ[l] / ρ
 ```
 
 Next, to reduce an assignment expression `t₁:=t₂`, we must first
@@ -1288,13 +1315,13 @@ reduce `t₁` until it becomes a value (a location), and then
 reduce `t₂` until it becomes a value (of any sort):
 
 ```display
-                        t₁ / st ⟶ t₁' / st'
+                        t₁ / ρ ⟶ t₁' / ρ'
                  ----------------------------------- (assign₁)
-                 t₁ := t₂ / st ⟶ t₁' := t₂ / st'
+                 t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'
 
-                        t₂ / st ⟶ t₂' / st'
+                        t₂ / ρ ⟶ t₂' / ρ'
                   --------------------------------- (assign₂)
-                  v₁ := t₂ / st ⟶ v₁ := t₂' / st'
+                  v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'
 ```
 
 Once we have finished with `t₁` and `t₂`, we have an expression of
@@ -1302,13 +1329,13 @@ the form `l:=v`, which we execute by updating the store to make
 location `l` contain `v`:
 
 ```display
-                               l < st.length
+                               l < ρ.length
                 -----------------------------------   (assign)
-                loc l := v / st ⟶ unit / [l:=v]st
+                loc l := v / ρ ⟶ unit / [l:=v]ρ
 ```
 
-The notation `[l:=v]st` means "the store that maps `l` to `v`
-and maps all other locations to the same thing as `st`". Note
+The notation `[l:=v]ρ` means "the store that maps `l` to `v`
+and maps all other locations to the same thing as `ρ`". Note
 that the term resulting from this reduction step is just `unit`;
 the interesting result is the updated store.
 
@@ -1316,22 +1343,22 @@ Finally, to reduct an expression of the form `ref t₁`, we first
 reduce `t₁` until it becomes a value:
 
 ```display
-                        t₁ / st ⟶ t₁' / st'
+                        t₁ / ρ ⟶ t₁' / ρ'
                     --------------------------- (ref)
-                    ref t₁ / st ⟶ ref t₁' / st'
+                    ref t₁ / ρ ⟶ ref t₁' / ρ'
 ```
 
 Then, to reduce the `ref` itself, we choose a fresh location at
-the end of the current store -- i.e., location `st.length` -- and yield
-a new store that extends `st` with the new value `v`.
+the end of the current store -- i.e., location `ρ.length` -- and yield
+a new store that extends `ρ` with the new value `v`.
 
 ```display
           -------------------------------- (refValue)
-          ref v / st ⟶ loc st.length / st, v
+          ref v / ρ ⟶ loc ρ.length / ρ, v
 ```
 
 The value resulting from this step is the newly allocated location
-itself.  (Formally, `st, v` means `st ++ [v]` -- i.e., to add
+itself.  (Formally, `ρ, v` means `ρ.concat v` -- i.e., to add
 a new reference cell to the store, we append it to the end.)
 
 Note that these reduction rules do not perform any kind of
@@ -1351,1386 +1378,1130 @@ Here are the rules again, formally:
 ```lean
 section
 set_option hygiene false in
-local notation:40 t:41 " / " st:41 " ⟶ " t':41 " / " st:41 => Step t st t' st'
+local notation:40
+  t:71 " / " ρ:41 " ⟶ " t':71 " / " ρ':41 =>
+  Step (t, ρ) (t', ρ')
 
-inductive Step : Tm → Store → Tm → Store → Prop :=
-  | appAbs : forall x τ₂ t₁ v₂ st,
-         value v₂ →
-         <{ (λx : τ₂, t₁) v₂ }> / st ⟶ <{ [x := v₂] t₁ }> / st
-  | app₁ : forall t₁ t₁' t₂ st st',
-         t₁ / st ⟶ t₁' / st' →
-         <{ t₁ t₂ }> / st ⟶ <{ t₁' t₂ }> / st'
-  | app₂ : forall v₁ t₂ t₂' st st',
-         value v₁ →
-         t₂ / st ⟶ t₂' / st' →
-         <{ v₁ t₂ }> / st ⟶ <{ v₁ t₂' }> / st'
-  (* numbers *)
-  | ST_SuccNat : forall (n : nat) st,
-         <{ succ n }> / st ⟶ tm_const (S n) / st
-  | ST_Succ : forall t₁ t₁' st st',
-         t₁ / st ⟶ t₁' / st' →
-         <{ succ t₁ }> / st ⟶ <{ succ t₁' }> / st'
-  | ST_PredNat : forall (n : nat) st,
-         <{ pred n }> / st ⟶ tm_const (n - 1) / st
-  | ST_Pred : forall t₁ t₁' st st',
-         t₁ / st ⟶ t₁' / st' →
-         <{ pred t₁ }> / st ⟶ <{ pred t₁' }> / st'
-  | ST_MultNats : forall (n1 n2 : nat) st,
-      <{ n1 * n2 }> / st ⟶  tm_const (n1 * n2) / st
-  | ST_Mult1 : forall t₁ t₂ t₁' st st',
-         t₁ / st ⟶ t₁' / st' →
-         <{ t₁ * t₂ }> / st ⟶ <{ t₁' * t₂ }> / st'
-  | ST_Mult2 : forall v₁ t₂ t₂' st st',
-         value v₁ →
-         t₂ / st ⟶ t₂' / st' →
-         <{ v₁ * t₂ }> / st ⟶ <{ v₁ * t₂' }> / st'
-  | ST_If0 : forall t₁ t₁' t₂ t3 st st',
-         t₁ / st ⟶ t₁' / st' →
-         <{ if0 t₁ then t₂ else t3 }> / st ⟶ <{ if0 t₁' then t₂ else t3 }> / st'
-  | ST_If0_Zero : forall t₂ t3 st,
-         <{ if0 0 then t₂ else t3 }> / st ⟶ t₂ / st
-  | ST_If0_Nonzero : forall n t₂ t3 st,
-         <{ if0 $(S n) then t₂ else t3 }> / st ⟶ t3 / st
-  (* references *)
-  | refValue : forall v st,
-         value v →
-         <{ ref v }> / st ⟶ <{ loc $(length st) }> / (st ++ v::nil)
-  | ref : forall t₁ t₁' st st',
-         t₁ / st ⟶ t₁' / st' →
-         <{ ref t₁ }> /  st ⟶ <{ ref t₁' }> /  st'
-  | derefLoc : forall st l,
-         l < length st →
-         <{ !(loc l) }> / st ⟶ <{ $(store_lookup l st) }> / st
-  | deref : forall t₁ t₁' st st',
-         t₁ / st ⟶ t₁' / st' →
-         <{ ! t₁ }> / st ⟶ <{ ! t₁' }> / st'
-  | assign : forall v l st,
-         value v →
-         l < length st →
-         <{ (loc l) := v }> / st ⟶ <{ unit }> / replace l v st
-  | assign₁ : forall t₁ t₁' t₂ st st',
-         t₁ / st ⟶ t₁' / st' →
-         <{ t₁ := t₂ }> / st ⟶ <{ t₁' := t₂ }> / st'
-  | assign₂ : forall v₁ t₂ t₂' st st',
-         value v₁ →
-         t₂ / st ⟶ t₂' / st' →
-         <{ v₁ := t₂ }> / st ⟶ <{ v₁ := t₂' }> / st'
+inductive Step : Tm × Store → Tm × Store → Prop where
+  -- pure STLC
+  | appAbs {x : String} {τ₂ : Ty} {t₁ v₂ : Tm} {ρ : Store}
+      (h : v₂.IsValue) :
+      <{(λ x : τ₂ . t₁) v₂}> / ρ ⟶
+      <{ [x := v₂] t₁ }> / ρ
+  | app₁ {t₁ t₁' t₂ : Tm} {ρ ρ' : Store}
+      (h : t₁ / ρ ⟶ t₁' / ρ') :
+      <{t₁ t₂}> / ρ ⟶ <{t₁' t₂}> / ρ'
+  | app₂ {v₁ t₂ t₂' : Tm} {ρ ρ' : Store}
+      (h₁ : v₁.IsValue)
+      (h₂ : t₂ / ρ ⟶ t₂' / ρ') :
+      <{v₁ t₂}> / ρ ⟶ <{v₁ t₂'}> / ρ'
+  -- numbers
+  | succNat {n : Nat} {ρ : Store} :
+      <{ succ ~(Tm.const n) }> / ρ ⟶ Tm.const (n + 1) / ρ
+  | succ {t₁ t₁' : Tm} {ρ ρ' : Store}
+      (h : t₁ / ρ ⟶ t₁' / ρ') :
+      <{ succ t₁ }> / ρ ⟶ <{ succ t₁' }> / ρ'
+  | predConst {n : Nat} {ρ : Store} :
+      <{ pred ~(Tm.const n) }> / ρ ⟶ Tm.const (n - 1) / ρ
+  | pred {t₁ t₁' : Tm} {ρ ρ' : Store}
+      (h : t₁ / ρ ⟶ t₁' / ρ') :
+      <{ pred t₁ }> / ρ ⟶ <{ pred t₁' }> / ρ'
+  | multConst {n₁ n₂ : Nat} {ρ : Store} :
+      <{ ~(Tm.const n₁) * ~(Tm.const n₂) }> / ρ ⟶
+      Tm.const (n₁ * n₂) / ρ
+  | mult₁ {t₁ t₁' t₂ : Tm} {ρ ρ' : Store}
+      (h : t₁ / ρ ⟶ t₁' / ρ') :
+      <{ t₁ * t₂ }> / ρ ⟶ <{ t₁' * t₂ }> / ρ'
+  | mult₂ {v₁ t₂ t₂' : Tm} {ρ ρ' : Store}
+      (h₁ : v₁.IsValue)
+      (h₂ : t₂ / ρ ⟶ t₂' / ρ') :
+      <{ v₁ * t₂ }> / ρ ⟶ <{ v₁ * t₂' }> / ρ'
+  | if0Step {t₁ t₁' t₂ t₃ : Tm} {ρ ρ' : Store}
+      (h : t₁ / ρ ⟶ t₁' / ρ') :
+      <{ if0 t₁ then t₂ else t₃ }> / ρ ⟶
+      <{ if0 t₁' then t₂ else t₃ }> / ρ'
+  | if0Zero {t₂ t₃ : Tm} {ρ : Store} :
+      <{ if0 0 then t₂ else t₃ }> / ρ ⟶ t₂ / ρ
+  | if0Nonzero {n : Nat} {t₂ t₃ : Tm} {ρ : Store} :
+      <{ if0 ~(Tm.const (n + 1)) then t₂ else t₃ }> / ρ ⟶
+      t₃ / ρ
+  -- references
+  | refValue {v : Tm} {ρ : Store}
+      (h : v.IsValue) :
+      <{ ref v }> / ρ ⟶ Tm.loc ρ.length / ρ.concat v
+  | ref {t₁ t₁' : Tm} {ρ ρ' : Store}
+      (h : t₁ / ρ ⟶ t₁' / ρ') :
+      <{ ref t₁ }> / ρ ⟶ <{ ref t₁' }> / ρ'
+  | derefLoc {l : Nat} {ρ : Store}
+      (h : l < ρ.length) :
+      <{ !~(Tm.loc l) }> / ρ ⟶ ρ[l] / ρ
+  | deref {t₁ t₁' : Tm} {ρ ρ' : Store}
+      (h : t₁ / ρ ⟶ t₁' / ρ') :
+      <{ !t₁ }> / ρ ⟶ <{ !t₁' }> / ρ'
+  | assign {v : Tm} {l : Nat} {ρ : Store}
+      (h₁ : v.IsValue)
+      (h₂ : l < ρ.length) :
+      <{ ~(Tm.loc l) := v }> / ρ ⟶ <{ unit }> / ρ.set l v
+  | assign₁ {t₁ t₁' t₂ : Tm} {ρ ρ' : Store}
+      (h : t₁ / ρ ⟶ t₁' / ρ') :
+      <{ t₁ := t₂ }> / ρ ⟶ <{ t₁' := t₂ }> / ρ'
+  | assign₂ {v₁ t₂ t₂' : Tm} {ρ ρ' : Store}
+      (h₁ : v₁.IsValue)
+      (h₂ : t₂ / ρ ⟶ t₂' / ρ') :
+      <{ v₁ := t₂ }> / ρ ⟶ <{ v₁ := t₂' }> / ρ'
+end
+
+scoped notation:40
+  t:71 " / " ρ:41 " ⟶ " t':71 " / " ρ':41 =>
+  Step (t, ρ) (t', ρ')
+scoped notation:40
+  t:71 " / " ρ:41 " ⟶* " t':71 " / " ρ':41 =>
+  Multi Step (t, ρ) (t', ρ')
+
+attribute [StlcRefEval] Step.appAbs Step.app₁ Step.app₂
+    Step.succ Step.succNat Step.pred Step.predConst
+    Step.multConst Step.mult₁ Step.mult₂
+    Step.if0Step Step.if0Zero Step.if0Nonzero
+    Step.refValue Step.ref Step.derefLoc Step.deref Step.assign
+    Step.assign₁ Step.assign₂
 ```
 
-(** FULL: One slightly ugly point should be noted here: In the
-    [refValue] rule, we extend the state by writing [st ++ v::nil]
-    rather than the more natural [st ++ [v```.  The reason for this is
-    that the notation we've defined for substitution uses square
-    brackets, which clash with the standard library's notation for
-    lists. *)
+# Typing
 
-Hint Constructors step : core.
+The contexts assigning types to free variables are exactly the
+same as for the STLC: partial maps from identifiers to types.
 
-Definition multistep := (multi step).
-Notation "t '/' st '⟶*' t' '/' st'" :=
-               (multistep (t,st) (t',st'))
-               (at level 40, st at level 39, t' at level 39).
-(* TERSE: /HIDEFROMHTML *)
+```lean
+abbrev Context := PartialMap String Ty
+```
 
-(* ################################### *)
-(** * Typing *)
+## Store typings
 
-(** The contexts assigning types to free variables are exactly the
-    same as for the STLC: partial maps from identifiers to types. *)
+::::full
+Having extended our syntax and reduction rules to accommodate
+references, our last job is to write down typing rules for the new
+constructs (and, of course, to check that these rules are sound!).
 
-Definition context := partial_map Ty.
+Naturally, the key question is, "What is the type of a location?"
+::::
+::::terse
+Naturally, the key question is, "What is the type of a location?"
+::::
 
-(* ################################### *)
+::::full
+First of all, notice that this question doesn't arise when
+typechecking terms that programmers actually write.  Concrete
+location constants arise only in terms that are the intermediate
+results of reduction; they are not in the language that
+programmers write.  So we only need to determine the type of a
+location when we're in the middle of a reduction sequence, e.g.,
+trying to apply the progress or preservation lemmas.  Thus, even
+though we normally think of typing as a _static_ program property,
+it makes sense for the typing of locations to depend on the
+_dynamic_ progress of the program too.
 
-(** ** Store typings *)
+As a first try, note that when we reduce a term containing
+concrete locations, the type of the result depends on the contents
+of the store that we start with.  For example, if we reduce the
+term `!(loc 1)` in the store `unit, unit`, the result is `unit`;
+if we reduce the same term in the store `unit, λX:Unit.X`, the
+result is `λX:Unit.X`.  With respect to the former store, the
+location `1` has type `Unit`, and with respect to the latter it
+has type `Unit→Unit`. This observation leads us immediately to a
+first attempt at a typing rule for locations:
+::::
 
-(** FULL: Having extended our syntax and reduction rules to accommodate
-    references, our last job is to write down typing rules for the new
-    constructs (and, of course, to check that these rules are sound!).
+::::terse
+As a first try, observe that the type of a location is  connected to the contents of the store `ρ`.
+::::
 
-    Naturally, the key question is, "What is the type of a location?"
-*)
-(** TERSE: Naturally, the key question is, "What is the type of a
-    location?" *)
-
-(** FULL: First of all, notice that this question doesn't arise when
-    typechecking terms that programmers actually write.  Concrete
-    location constants arise only in terms that are the intermediate
-    results of reduction; they are not in the language that
-    programmers write.  So we only need to determine the type of a
-    location when we're in the middle of a reduction sequence, e.g.,
-    trying to apply the progress or preservation lemmas.  Thus, even
-    though we normally think of typing as a _static_ program property,
-    it makes sense for the typing of locations to depend on the
-    _dynamic_ progress of the program too.
-
-    As a first try, note that when we reduce a term containing
-    concrete locations, the type of the result depends on the contents
-    of the store that we start with.  For example, if we reduce the
-    term [!(loc 1)] in the store ```unit, unit```, the result is `unit`;
-    if we reduce the same term in the store ```unit, λx:Unit,x```, the
-    result is [λx:Unit,x].  With respect to the former store, the
-    location [1] has type `Unit`, and with respect to the latter it
-    has type [Unit→Unit]. This observation leads us immediately to a
-    first attempt at a typing rule for locations:
- *)
-(** TERSE: As a first try, observe that the type of a location is
-    connected to the contents of the store ```st```.
-*)
-(**
 ```display
-                             Γ ⊢ lookup l st : τ₁
-                             --------------------------
-                             Γ ⊢ loc l : Ref τ₁
+         Γ ⊢ ρ[l] : τ₁
+      -------------------
+      Γ ⊢ loc l : Ref τ₁
 ```
- *)
-(** TERSE: But where does ```st``` come from? *)
-(** FULL: That is, to find the type of a location `l`, we look up the
-    current contents of `l` in the store and calculate the type [τ₁]
-    of the contents.  The type of the location is then [Ref τ₁].
 
-    Having begun in this way, we need to go a little further to reach a
-    consistent state.  In effect, by making the type of a term depend on
-    the store, we have changed the typing relation from a three-place
-    relation (between contexts, terms, and types) to a four-place relation
-    (between contexts, _stores_, terms, and types).  Since the store is,
-    intuitively, part of the context in which we calculate the type of a
-    term, let's write this four-place relation with the store to the left
-    of the turnstile: [Γ; st ⊢ t : T].  Our rule for typing
-    references now has the form
- *)
-(** TERSE: *** *)
-(** TERSE: We could try adding `st` to the judgment: [Γ; st ⊢ t : T],
-    which gives us this rule:
-*)
-(**
+But where does `ρ` come from?
+
+::::full
+That is, to find the type of a location `l`, we look up the
+current contents of `l` in the store and calculate the type `τ₁`
+of the contents.  The type of the location is then `Ref τ₁`.
+
+Having begun in this way, we need to go a little further to reach a
+consistent state.  In effect, by making the type of a term depend on
+the store, we have changed the typing relation from a three-place
+relation (between contexts, terms, and types) to a four-place relation
+(between contexts, _stores_, terms, and types).  Since the store is,
+intuitively, part of the context in which we calculate the type of a
+term, let's write this four-place relation with the store to the left
+of the turnstile: `Γ; ρ ⊢ t : τ`.  Our rule for typing
+references now has the form
+::::
+
+::::terse
+We could try adding `ρ` to the judgment: `Γ; ρ ⊢ t : τ`, which gives us this rule:
+::::
+
 ```display
-                     Γ; st ⊢ lookup l st : τ₁
-                     ------------------------------
-                      Γ; st ⊢ loc l : Ref τ₁
+                     Γ; ρ ⊢ ρ[l] : τ₁
+                ------------------------------
+                    Γ; ρ ⊢ loc l : Ref τ₁
 ```
-*)
-(** TERSE: But that means the _whole_ store `st`, including all dynamically
-    created values, is needed _during typechecking_.  This does not seem
-    like something we want.
 
-    Worse yet, it doesn't work at all for _cyclic_ stores.
-*)
-(** FULL:
-    and all the rest of the typing rules in the system are extended
-    similarly with stores.  (The other rules do not need to do anything
-    interesting with their stores -- just pass them from premise to
-    conclusion.)
+::::terse
+But that means the _whole_ store `ρ`, including all dynamically
+created values, is needed _during typechecking_.  This does not seem
+like something we want.
 
-    However, this rule will not quite do.  For one thing, typechecking
-    is rather inefficient, since calculating the type of a location `l`
-    involves calculating the type of the current contents [v] of `l`.  If
-    `l` appears many times in a term `τ`, we will re-calculate the type of
-    [v] many times in the course of constructing a typing derivation for
-    `τ`.  Worse, if [v] itself contains locations, then we will have to
-    recalculate _their_ types each time they appear.  Worse yet, the
-    proposed typing rule for locations may not allow us to derive
-    anything at all if the store contains a _cycle_.  For example,
-    there is no finite typing derivation for the location [0] with respect
-    to this store:
- *)
-(** TERSE: For example, what is the type of location [0] in the
-    following store? *)
-(**
+Worse yet, it doesn't work at all for _cyclic_ stores.
+::::
+
+::::full
+and all the rest of the typing rules in the system are extended
+similarly with stores.  (The other rules do not need to do anything
+interesting with their stores -- just pass them from premise to
+conclusion.)
+
+However, this rule will not quite do.  For one thing, typechecking
+is rather inefficient, since calculating the type of a location `l`
+involves calculating the type of the current contents `v` of `l`.  If
+`l` appears many times in a term `τ`, we will re-calculate the type of
+`v` many times in the course of constructing a typing derivation for
+`τ`.  Worse, if `v` itself contains locations, then we will have to
+recalculate _their_ types each time they appear.  Worse yet, the
+proposed typing rule for locations may not allow us to derive
+anything at all if the store contains a _cycle_.  For example,
+there is no finite typing derivation for the location `0` with respect
+to this store:
+::::
+
+::::terse
+For example, what is the type of location `0` in the  following store?
+::::
+
 ```
-   [λx:Nat, (!(loc 1)) x, λx:Nat, (!(loc 0)) x]
+λX:Nat. (!(loc 1)) X, λX:Nat. (!(loc 0)) X
 ```
-*)
-(* FULL *)
-(* EX3 (cyclic_store) *)
-(** Can you find a term whose reduction will create this particular
-    cyclic store? *)
 
-Theorem cyclic_store:
-  exists t,
-    t / nil ⟶*
-    <{ unit }> / (<{ λx:Nat, (!(loc 1)) x }> :: <{ λx:Nat, (!(loc 0)) x }> :: nil).
-Proof.
-  (* ADMITTED *)
-  Notation "'let' x ':' T '=' t₁ 'in' t₂" :=
-    <{ (λx:T, t₂) t₁ }> (in custom stlc_tm at level 3, T custom stlc_ty).
-  remember ("r0"%string) as r0.
-  remember ("r1"%string) as r1.
-  exists <{ let r0 : (Ref (Nat → Nat)) = ref (λx:Nat, x) in
-            let r1 : (Ref (Nat → Nat)) = ref (λx:Nat, (!r0) x) in
-            (r0 := λx:Nat, (!r1) x) }>.
-  subst.
-  eapply multi_step. auto. simpl.
-  eapply multi_step. auto. simpl.
-  eapply multi_step. auto. simpl.
-  eapply multi_step. auto. simpl.
-  eapply multi_step. { apply assign. auto. simpl. auto. } simpl.
-  eapply multi_refl.
-Qed.
-(* /ADMITTED *)
-(** [] *)
-(* /FULL *)
-(** TERSE: *** *)
+:::::full
+::::exercise (rating := 3) (name := "cyclic_store")
+Can you find a term whose reduction will create this particular
+cyclic store?
 
-(** FULL: These problems arise from the fact that our proposed
-    typing rule for locations requires us to recalculate the type of a
-    location every time we mention it in a term.  But this,
-    intuitively, should not be necessary.  After all, when a location
-    is first created, we know the type of the initial value that we
-    are storing into it.  Suppose we are willing to enforce the
-    invariant that the type of the value contained in a given location
-    _never changes_; that is, although we may later store other values
-    into this location, those other values will always have the same
-    type as the initial one.  In other words, we always have in mind a
-    single, definite type for every location in the store, which is
-    fixed when the location is allocated.  Then these intended types
-    can be collected together as a _store typing_ -- a finite function
-    mapping locations to types.
+```lean
+theorem cyclic_store:
+  ∃ t,
+    t / [] ⟶*
+    <{ unit }> / (<{ λX:Nat. (!(loc 1)) X }> :: <{ λX:Nat. (!(loc 0)) X }> :: []) := by
+  solution!
+    -- `(λR:τ. t₂) t₁` acts as `let R : τ = t₁ in t₂`
+    exists <{
+      (λR₀ : Ref (Nat → Nat).
+        (λR₁ : Ref (Nat → Nat).
+          R₀ := (λX:Nat. (!R₁) X))
+        (ref (λX:Nat. (!R₀) X)))
+      (ref (λX:Nat. X)) }>
+    repeat
+      apply Multi.step
+      solve_by_elim using StlcRefEval
+    apply Multi.refl
+```
+::::
+:::::
 
-    As with the other type systems we've seen, this conservative typing
-    restriction on allowed updates means that we will rule out as
-    ill-typed some programs that could reduce perfectly well without
-    getting stuck.
+::::full
+These problems arise from the fact that our proposed
+typing rule for locations requires us to recalculate the type of a
+location every time we mention it in a term.  But this,
+intuitively, should not be necessary.  After all, when a location
+is first created, we know the type of the initial value that we
+are storing into it.  Suppose we are willing to enforce the
+invariant that the type of the value contained in a given location
+_never changes_; that is, although we may later store other values
+into this location, those other values will always have the same
+type as the initial one.  In other words, we always have in mind a
+single, definite type for every location in the store, which is
+fixed when the location is allocated.  Then these intended types
+can be collected together as a _store typing_ -- a finite function
+mapping locations to types.
 
-    Just as we did for stores, we will represent a store type simply
-    as a list of types: the type at index [i] records the type of the
-    values that we expect to be stored in cell [i]. *)
-(** TERSE: Instead, we establish an _invariant_ that the type of
-    value stored in a location never changes.
+As with the other type systems we've seen, this conservative typing
+restriction on allowed updates means that we will rule out as
+ill-typed some programs that could reduce perfectly well without
+getting stuck.
 
-     This _static_ representation of the store contents is called a
-     _store typing_: *)
+Just as we did for stores, we will represent a store type simply
+as a list of types: the type at index `i` records the type of the
+values that we expect to be stored in cell `i`.
+::::
 
-Definition store_ty := list Ty.
+::::terse
+Instead, we establish an _invariant_ that the type of
+value stored in a location never changes.
 
-(** TERSE: Here we represent locations as indices into a _list_ of
-    types so the type at index [i] is the type of the values stored in
-    cell [i]. *)
+This _static_ representation of the store contents is called a
+_store typing_:
+::::
 
-(** The [store_Tlookup] function retrieves the type at a particular
-    index. *)
+```lean
+abbrev StoreTy := List Ty
+```
 
-Definition store_Tlookup (n:nat) (ST:store_ty) :=
-  nth n ST <{{ Unit }}>.
+:::terse
+Here we represent locations as indices into a _list_ of
+types so the type at index `i` is the type of the values stored in
+cell `i`.
+:::
 
-(** TERSE: *** *)
+```lean
+open scoped MyGetElem
+instance : MyGetElem StoreTy Nat Ty where
+  getElem δ n := δ.getD n <{Unit}>
 
-(** FULL: Suppose we are given a store typing [ST] describing the store
-    `st` in which some term `τ` will be reduced.  Then we can use
-    [ST] to calculate the type of the result of `τ` without ever
-    looking directly at `st`.  For example, if [ST] is ```Unit,
-    Unit→Unit```, then we can immediately infer that [!(loc 1)] has
-    type [Unit→Unit].  More generally, the typing rule for locations
-    can be reformulated in terms of store typings like this: *)
-(** TERSE: We can use the store typing [ST] to give a type to
-    any location `l` like this: *)
-(**
+@[simp]
+theorem StoreTy_get_succ_tl (hd : Ty) (tl : StoreTy) (n : Nat) :
+  (hd :: tl)[n + 1] = tl[n] := by rfl
+@[simp]
+theorem StoreTy_get_zero_hd (hd : Ty) (tl : StoreTy) :
+  (hd :: tl)[0] = hd := by rfl
+```
+
+::::full
+Suppose we are given a store typing `δ` describing the store
+`ρ` in which some term `τ` will be reduced.  Then we can use
+`δ` to calculate the type of the result of `τ` without ever
+looking directly at `ρ`.  For example, if `δ` is `Unit, Unit→Unit`,
+then we can immediately infer that `!(loc 1)` has
+type `Unit→Unit`.  More generally, the typing rule for locations
+can be reformulated in terms of store typings like this:
+::::
+
+::::terse
+We can use the store typing `δ` to give a type to
+any location `l` like this:
+::::
+
+
 ```display
-                                 l < |ST|
-                   ----------------------------------------------
-                   Γ; ST ⊢ loc l : Ref (store_Tlookup l ST)
+        l < δ.length
+  --------------------------
+  Γ; δ ⊢ loc l : Ref δ[l]
 ```
-*)
-(** FULL: That is, as long as `l` is a valid location, we can compute the
-    type of `l` just by looking it up in [ST].  Typing is again a
-    four-place relation, but it is parameterized on a store _typing_
-    rather than a concrete store.  The rest of the typing rules are
-    analogously augmented with store typings. *)
 
-(* ################################### *)
-(** ** The Typing Relation *)
+That is, as long as `l` is a valid location, we can compute the
+type of `l` just by looking it up in `δ`.  Typing is again a
+four-place relation, but it is parameterized on a store _typing_
+rather than a concrete store.  The rest of the typing rules are
+analogously augmented with store typings.
 
-(** FULL: We can now formalize the typing relation for the STLC with
-    references.  Here, again, are the rules we're adding to the base
-    STLC (with numbers and `Unit`): *)
+## The Typing Relation
 
-(**
+::::full
+We can now formalize the typing relation for the STLC with
+references.  Here, again, are the rules we're adding to the base
+STLC (with numbers and `Unit`):
+::::
+
+
 ```display
-                               l < |ST|
-             ----------------------------------------------             (T_Loc)
-             Γ; ST ⊢ loc l : Ref (store_Tlookup l ST)
+                          l < δ.length
+                    ---------------------------             (loc)
+                    Γ; δ ⊢ loc l : Ref δ[l]
 
-                         Γ; ST ⊢ t₁ : τ₁
-                     -----------------------------                      (ref)
-                     Γ; ST ⊢ ref t₁ : Ref τ₁
+                         Γ; δ ⊢ t₁ : τ₁
+                     ---------------------------            (ref)
+                     Γ; δ ⊢ ref t₁ : Ref τ₁
 
-                      Γ; ST ⊢ t₁ : Ref τ₁
-                      -------------------------                       (deref)
-                        Γ; ST ⊢ !t1 : τ₁
+                      Γ; δ ⊢ t₁ : Ref τ₁
+                      -------------------------             (deref)
+                        Γ; δ ⊢ !t₁ : τ₁
 
-                      Γ; ST ⊢ t₁ : Ref τ₂
-                        Γ; ST ⊢ t₂ : τ₂
-                    -----------------------------                    (assign)
-                    Γ; ST ⊢ t₁ := t₂ : Unit
+                      Γ; δ ⊢ t₁ : Ref τ₂
+                        Γ; δ ⊢ t₂ : τ₂
+                    -----------------------------           (assign)
+                    Γ; δ ⊢ t₁ := t₂ : Unit
 ```
-*)
 
-(* HIDEFROMHTML *)
-(* INSTRUCTORS: ------------------------------------------------------------- *)
-(* INSTRUCTORS: Begin Definition of template STCL has_type notation MODIFIED *)
-Notation "x '|→' v ';' m " := (update m x v)
-  (in custom stlc_tm at level 0, x constr at level 0,
-   v custom stlc_ty, right associativity) : stlc_scope.
+```lean
+inductive HasType (δ : StoreTy) : Context → Tm → Ty → Prop where
+  -- pure STLC
+  | var {Γ : Context} {x : String} {τ₁ : Ty}
+      (h : Γ[x] = some τ₁) :
+      <{ Γ / δ ⊢ ~(Tm.var x) ⦂ τ₁ }>
+  | abs {Γ : Context} {x : String} {τ₁ τ₂ : Ty} {t₁ : Tm}
+      (h : <{ x ↦ τ₂ ; Γ / δ ⊢ t₁ ⦂ τ₁ }>) :
+      <{ Γ / δ ⊢ λ x : τ₂ . t₁ ⦂ τ₂ → τ₁ }>
+  | app {Γ : Context} {τ₁ τ₂ : Ty} {t₁ t₂ : Tm}
+      (h₁ : <{ Γ / δ ⊢ t₁ ⦂ τ₂ → τ₁ }>)
+      (h₂ : <{ Γ / δ ⊢ t₂ ⦂ τ₂ }>) :
+      <{ Γ / δ ⊢ t₁ t₂ ⦂ τ₁ }>
+  -- numbers
+  | const {Γ : Context} {n : Nat} :
+      <{ Γ / δ ⊢ ~(Tm.const n) ⦂ Nat }>
+  | succ {Γ : Context} {t₁ : Tm}
+      (h : <{ Γ / δ ⊢ t₁ ⦂ Nat }>) :
+      <{ Γ / δ ⊢ succ t₁ ⦂ Nat }>
+  | pred {Γ : Context} {t₁ : Tm}
+      (h : <{ Γ / δ ⊢ t₁ ⦂ Nat }>) :
+      <{ Γ / δ ⊢ pred t₁ ⦂ Nat }>
+  | mult {Γ : Context} {t₁ t₂ : Tm}
+      (h₁ : <{ Γ / δ ⊢ t₁ ⦂ Nat }>)
+      (h₂ : <{ Γ / δ ⊢ t₂ ⦂ Nat }>) :
+      <{ Γ / δ ⊢ t₁ * t₂ ⦂ Nat }>
+  | ite0 {Γ : Context} {t₁ t₂ t₃ : Tm} {τ : Ty}
+      (h₁ : <{ Γ / δ ⊢ t₁ ⦂ Nat }>)
+      (h₂ : <{ Γ / δ ⊢ t₂ ⦂ τ }>)
+      (h₃ : <{ Γ / δ ⊢ t₃ ⦂ τ }>) :
+      <{ Γ / δ ⊢ if0 t₁ then t₂ else t₃ ⦂ τ }>
+  -- unit
+  | unit {Γ : Context} :
+      <{ Γ / δ ⊢ unit ⦂ Unit }>
+  -- references
+  | loc {Γ : Context} {l : Nat}
+      (h : l < δ.length) :
+      <{ Γ / δ ⊢ ~(Tm.loc l) ⦂ Ref ~(δ[l]) }>
+  | ref {Γ : Context} {t₁ : Tm} {τ₁ : Ty}
+      (h : <{ Γ / δ ⊢ t₁ ⦂ τ₁ }>) :
+      <{ Γ / δ ⊢ ref t₁ ⦂ Ref τ₁ }>
+  | deref {Γ : Context} {t₁ : Tm} {τ₁ : Ty}
+      (h : <{ Γ / δ ⊢ t₁ ⦂ Ref τ₁ }>) :
+      <{ Γ / δ ⊢ !t₁ ⦂ τ₁ }>
+  | assign {Γ : Context} {t₁ t₂ : Tm} {τ₂ : Ty}
+      (h₁ : <{ Γ / δ ⊢ t₁ ⦂ Ref τ₂ }>)
+      (h₂ : <{ Γ / δ ⊢ t₂ ⦂ τ₂ }>) :
+      <{ Γ / δ ⊢ t₁ := t₂ ⦂ Unit }>
 
-Notation "x '|→' v " := (update empty x v)
-  (in custom stlc_tm at level 0, x constr at level 0, v custom stlc_ty) : stlc_scope.
+attribute [StlcRefTyping] HasType.var HasType.abs HasType.app
+    HasType.const HasType.succ HasType.pred HasType.mult
+    HasType.ite0 HasType.unit
+    HasType.loc HasType.ref HasType.deref HasType.assign
+```
 
-(* NOTATION: If we don't include the following, then <{ empty ⊢ t : T }>
-   will print as <{ $(empty) ⊢ t : T }> *)
-Notation "'empty'" := empty (in custom stlc_tm) : stlc_scope.
+:::details "Notation encoding"
+```lean
+open Lean PrettyPrinter StlcCommon.Delab in
+@[app_unexpander HasType]
+def HasType.unexpand : Unexpander
+  | `($_ $δ $Γ $t $T) => do
+      let Γ' ← unexpandCtx Γ
+      `(<{ $Γ':stlcCtx / $δ ⊢ $(getTm t):stlcTm ⦂ $(getTy T):stlcTy }>)
+  | _ => throw ()
+```
+:::
 
-Reserved Notation "<{ Γ '/' ST '⊢' t '\in' T }>"
-            (at level 0, Γ custom stlc_tm at level 200, t custom stlc_tm, T custom stlc_ty).
-(* INSTRUCTORS: End STCL has_type notation MODIFIED *)
-(* INSTRUCTORS: ------------------------------------------------------------- *)
-(* /HIDEFROMHTML *)
+:::ignore
+```lean -show
+/-- info: <{ ∅ / [] ⊢ ref 3 ⦂ Ref Nat }> : Prop -/
+#guard_msgs in
+#check <{ ∅ / [] ⊢ ref 3 ⦂ Ref Nat }>
 
-(* TERSE: HIDEFROMHTML *)
-Inductive has_type (ST : store_ty) : contexτ → Tm → Ty → Prop :=
-  | T_Var : forall Γ x τ₁,
-      Γ x = Some τ₁ →
-      <{ Γ / ST ⊢ x ⦂ τ₁ }>
-  | T_Abs : forall Γ x τ₁ τ₂ t₁,
-      <{ x |→ τ₂; Γ  / ST ⊢ t₁ ⦂ τ₁ }> →
-      <{ Γ / ST ⊢ λx:τ₂, t₁ ⦂ τ₂ → τ₁ }>
-  | T_App : forall τ₁ τ₂ Γ t₁ t₂,
-      <{ Γ / ST ⊢ t₁ ⦂ τ₂ → τ₁ }> →
-      <{ Γ / ST ⊢ t₂ ⦂ τ₂ }> →
-      <{ Γ / ST ⊢ t₁ t₂ ⦂ τ₁ }>
-  | T_Nat : forall Γ (n : nat),
-      <{ Γ / ST ⊢ n ⦂ Nat }>
-  | T_Succ : forall Γ t₁,
-      <{ Γ / ST ⊢ t₁ ⦂ Nat }> →
-      <{ Γ / ST ⊢ succ t₁ ⦂ Nat }>
-  | T_Pred : forall Γ t₁,
-      <{ Γ / ST ⊢ t₁ ⦂ Nat }> →
-      <{ Γ / ST ⊢ pred t₁ ⦂ Nat }>
-  | T_Mult : forall Γ t₁ t₂,
-      <{ Γ / ST ⊢ t₁ ⦂ Nat }> →
-      <{ Γ / ST ⊢ t₂ ⦂ Nat }> →
-      <{ Γ / ST ⊢ t₁ * t₂ ⦂ Nat }>
-  | T_If0 : forall Γ t₁ t₂ t3 T0,
-      <{ Γ / ST ⊢ t₁ ⦂ Nat }> →
-      <{ Γ / ST ⊢ t₂ ⦂ T0 }> →
-      <{ Γ / ST ⊢ t3 ⦂ T0 }> →
-      <{ Γ / ST ⊢ if0 t₁ then t₂ else t3 ⦂ T0 }>
-  | T_Unit : forall Γ,
-      <{ Γ / ST ⊢ unit ⦂ Unit }>
-  | T_Loc : forall Γ l,
-      l < length ST →
-      <{ Γ / ST ⊢ (loc l) ⦂ Ref $(store_Tlookup l ST) }>
-  | ref : forall Γ t₁ τ₁,
-      <{ Γ / ST ⊢ t₁ ⦂ τ₁ }> →
-      <{ Γ / ST ⊢ (ref t₁) ⦂ Ref τ₁ }>
-  | deref : forall Γ t₁ τ₁,
-      <{ Γ / ST ⊢ t₁ ⦂ Ref τ₁ }> →
-      <{ Γ / ST ⊢ (! t₁) ⦂ τ₁ }>
-  | assign : forall Γ t₁ t₂ τ₂,
-      <{ Γ / ST ⊢ t₁ ⦂ Ref τ₂ }> →
-      <{ Γ / ST ⊢ t₂ ⦂ τ₂ }> →
-      <{ Γ / ST ⊢ (t₁ := t₂) ⦂ Unit }>
+/-- info: <{ X ↦ Ref Nat ; ∅ / (List.concat δ (<{ Nat }>)) ⊢ !X ⦂ Nat }> : Prop -/
+#guard_msgs in
+variable (δ : StoreTy) in
+#check <{ X ↦ Ref Nat ; ∅ / (δ.concat <{ Nat }>) ⊢ !X ⦂ Nat }>
 
-where "<{ Γ '/' ST '⊢' t '\in' T }>" := (has_type ST Γ t T).
+/-- error: typing judgments need a store typing: write `Γ / δ ⊢ t ⦂ τ` -/
+#guard_msgs in
+#check <{ ∅ ⊢ unit ⦂ Unit }>
 
-Hint Constructors has_type : core.
-(* TERSE: /HIDEFROMHTML *)
+example : <{ ∅ / [<{ Nat }>] ⊢ !(loc 0) ⦂ Nat }> := by
+  apply_rules using StlcRefTyping
+  simp
 
-(** FULL: Of course, these typing rules will accurately predict the results
-    of reduction only if the concrete store used during reduction
-    actually conforms to the store typing that we assume for purposes
-    of typechecking.  This proviso exactly parallels the situation
-    with free variables in the basic STLC: the substitution lemma
-    promises that, if [Γ ⊢ t : T], then we can replace the free
-    variables in `τ` with values of the types listed in [Γ] to
-    obtain a closed term of type `τ`, which, by the type preservation
-    theorem will reduce to a final result of type `τ` if it yields
-    any result at all.  We will see below how to formalize an
-    analogous intuition for stores and store typings.
+example : <{ ∅ / [] ⊢ (λ X : Ref Nat . X := 2) (ref 1) ⦂ Unit }> := by
+  apply_rules using StlcRefTyping
+```
+:::
 
-    However, for purposes of typechecking the terms that programmers
-    actually write, we do not need to do anything tricky to guess what
-    store typing we should use.  Concrete locations arise only in
-    terms that are the intermediate results of reduction; they are
-    not in the language that programmers write.  Thus, we can simply
-    typecheck the programmer's terms with respect to the _empty_ store
-    typing.  As reduction proceeds and new locations are created, we
-    will always be able to see how to extend the store typing by
-    looking at the type of the initial values being placed in newly
-    allocated cells; this intuition is formalized in the statement of
-    the type preservation theorem below.  *)
+::::full
+Of course, these typing rules will accurately predict the results
+of reduction only if the concrete store used during reduction
+actually conforms to the store typing that we assume for purposes
+of typechecking.  This proviso exactly parallels the situation
+with free variables in the basic STLC: the substitution lemma
+promises that, if `Γ / δ ⊢ t : T`, then we can replace the free
+variables in `τ` with values of the types listed in `Γ` to
+obtain a closed term of type `τ`, which, by the type preservation
+theorem will reduce to a final result of type `τ` if it yields
+any result at all.  We will see below how to formalize an
+analogous intuition for stores and store typings.
 
-(* ################################### *)
-(** * Properties *)
+However, for purposes of typechecking the terms that programmers
+actually write, we do not need to do anything tricky to guess what
+store typing we should use.  Concrete locations arise only in
+terms that are the intermediate results of reduction; they are
+not in the language that programmers write.  Thus, we can simply
+typecheck the programmer's terms with respect to the _empty_ store
+typing.  As reduction proceeds and new locations are created, we
+will always be able to see how to extend the store typing by
+looking at the type of the initial values being placed in newly
+allocated cells; this intuition is formalized in the statement of
+the type preservation theorem below.
+::::
 
-(** FULL: Our final task is to check that standard type safety
-    properties continue to hold for the STLC with references.  The
-    progress theorem ("well-typed terms are not stuck") can be stated
-    and proved almost as for the STLC; we just need to add a few
-    straightforward cases to the proof to deal with the new
-    constructs.  The preservation theorem is a bit more interesting,
-    so let's look at it first.  *)
-(** TERSE: Standard theorems...
-      - Progress -- pretty much same as always
-      - Preservation -- needs to be stated more carefully! *)
+# Properties
 
-(* ################################### *)
-(** ** Well-Typed Stores *)
+::::full
+Our final task is to check that standard type safety
+properties continue to hold for the STLC with references.  The
+progress theorem ("well-typed terms are not stuck") can be stated
+and proved almost as for the STLC; we just need to add a few
+straightforward cases to the proof to deal with the new
+constructs.  The preservation theorem is a bit more interesting,
+so let's look at it first.
+::::
 
-(** FULL: Since we have extended both the reduction relation (with
-    initial and final stores) and the typing relation (with a store
-    typing), we need to change the statement of preservation to
-    include these parameters.  But clearly we cannot just add stores
-    and store typings without saying anything about how they are
-    related -- i.e., this is wrong: *)
-(** TERSE: The evaluation and typing relations take more parameters
-    now, so at a minumum we have to add these to the statement of
-    preservation... *)
+::::terse
+Standard theorems...
+- Progress -- pretty much same as always
+- Preservation -- needs to be stated more carefully!
+::::
 
-Theorem preservation_wrong : forall ST T t st t' st',
-  <{ empty / ST ⊢ t ⦂ T }> →
-  t / st ⟶ t' / st' →
-  <{ empty / ST ⊢ t' ⦂ T }>.
-Abort.
+## Well-Typed Stores
 
-(** FULL: If we typecheck with respect to some set of assumptions
-    about the types of the values in the store and then reduce with
-    respect to a store that violates these assumptions, the result
-    will be disaster.  We say that a store `st` is _well typed_ with
-    respect a store typing [ST] if the term at each location `l` in
-    `st` has the type at location `l` in [ST].  Since only closed
-    terms ever get stored in locations (why?), it suffices to type
-    them in the empty context. The following definition of
-    [store_well_typed] formalizes this.  *)
-(** TERSE: Obviously wrong: no relation between assumed store typing
-    and provided store! *)
+::::full
+Since we have extended both the reduction relation (with
+initial and final stores) and the typing relation (with a store
+typing), we need to change the statement of preservation to
+include these parameters.  But clearly we cannot just add stores
+and store typings without saying anything about how they are
+related -- i.e., this is wrong:
+::::
 
-(** TERSE: *** *)
+::::terse
+The evaluation and typing relations take more parameters
+now, so at a minumum we have to add these to the statement of
+preservation...
+::::
 
-(** TERSE: We need a way of saying "this store satisfies the
-    assumptions of that store typing"... *)
+```lean +error
+theorem preservation_wrong (δ : StoreTy) (τ : Ty) (t t' : Tm) (ρ ρ' : Store) :
+    <{ ∅ / δ ⊢ t ⦂ τ }> →
+    t / ρ ⟶ t' / ρ' →
+    <{ ∅ / δ ⊢ t' ⦂ τ }> := by
+```
 
-Definition store_well_typed (ST:store_ty) (st:store) :=
-  length ST = length st /\
-  (forall l, l < length st →
-     <{ empty / ST ⊢ $(store_lookup l st)
-                           ⦂ $(store_Tlookup l ST) }>).
+::::full
+If we typecheck with respect to some set of assumptions
+about the types of the values in the store and then reduce with
+respect to a store that violates these assumptions, the result
+will be disaster.  We say that a store `ρ` is _well typed_ with
+respect a store typing `δ` if the term at each location `l` in
+`ρ` has the type at location `l` in `δ`.  Since only closed
+terms ever get stored in locations (why?), it suffices to type
+them in the empty context. The following definition of
+`StoreWellTyped` formalizes this:
+::::
 
-(** Informally, we will write [ST ⊢ st] for [store_well_typed ST st]. *)
+::::terse
+Obviously wrong: no relation between assumed store typing
+and provided store!
 
-(** FULL: Intuitively, a store `st` is consistent with a store typing
-    [ST] if every value in the store has the type predicted by the
-    store typing.  The only subtle point is the fact that, when typing
-    the values in the store, we supply the very same store typing to
-    the typing relation.  This allows us to type circular stores like
-    the one we saw above. *)
+We need a way of saying "this store satisfies the
+assumptions of that store typing"...
+::::
 
-(* FULL *)
-(* EX3 (store_not_unique) *)
-(** Can you find a store `st`, and two
-    different store typings [ST1] and [ST2] such that both
-    [ST1 ⊢ st] and [ST2 ⊢ st]? *)
+```lean
+def StoreWellTyped (δ:StoreTy) (ρ:Store) :=
+  δ.length = ρ.length ∧
+  (∀ (l : Nat), l < ρ.length → <{ ∅ / δ ⊢ ~(ρ[l]) ⦂ ~(δ[l]) }>)
+```
 
-(* SOLUTION *)
-(* Let `st` be a store with a single location [0], such that
-      `st`  =  [λx:Unit, (!(loc 0))(x)].
-   Then `st` is well typed with
-   respect to both of the following store typings:
-      ST1  =  [Unit → Unit]
-      ST2  =  [Unit → (Unit→Unit)].
-   In fact, it is well typed with respect to any store typing of the form
-      ST   =  [Uniτ → τ]
-   for any type `τ`. *)
-(* /SOLUTION *)
+Informally, we will write `δ ⊢ ρ` for `StoreWellTyped δ ρ`.
 
-Theorem store_not_unique:
-  exists st, exists ST1, exists ST2,
-    store_well_typed ST1 st /\
-    store_well_typed ST2 st /\
-    ST1 <> ST2.
-Proof.
-  (* ADMITTED *)
-  exists (<{ λx:Unit, (!(loc 0)) x }> :: nil).
-  exists (<{{ Unit → Unit }}> :: nil).
-  exists (<{{ Unit → Nat }}> :: nil).
-  unfold store_well_typed; simpl. repeat split.
-  { intros [|l'].
-    { intros _. repeat econstructor.
-      replace (<{{ Unit → Unit }}>)
-      with (store_Tlookup 0 (<{{ Unit → Unit }}>::nil)) at 2
-        by reflexivity.
-      repeat econstructor. }
-    { intros H. solve_by_inverts 2. } }
-  { intros [|l'].
-    { intros _. repeat econstructor.
-      replace (<{{ Unit → Nat }}>)
-      with (store_Tlookup 0 (<{{ Unit → Nat }}>::nil)) at 2
-        by reflexivity.
-      repeat econstructor. }
-    { intros H. solve_by_inverts 2. } }
-  { congruence. }
-Qed.
-(* /ADMITTED *)
-(** [] *)
-(* /FULL *)
+```lean
+scoped notation:40 δ:41 " ⊢ " ρ:41 => StoreWellTyped δ ρ
+```
 
-(** TERSE: *** *)
+Intuitively, a store `ρ` is consistent with a store typing
+`δ` if every value in the store has the type predicted by the
+store typing.  The only subtle point is the fact that, when typing
+the values in the store, we supply the very same store typing to
+the typing relation.  This allows us to type circular stores like
+the one we saw above.
 
-(** We can now state something closer to the desired preservation
-    property: *)
+:::::full
+::::exercise (rating := 3) (name := "store_not_unique")
+Can you find a store `ρ`, and two
+different store typings `δ₁` and `δ₂` such that both
+`δ₁ ⊢ ρ` and `δ₂ ⊢ ρ`?
 
-Theorem preservation_lesswrong : forall ST T t st t' st',
-  <{ empty / ST ⊢ t ⦂ T }> →
-  t / st ⟶ t' / st' →
-  store_well_typed ST st →
-  <{ empty / ST ⊢ t' ⦂ T }>.
-Abort.
+:::solution
+Let `ρ` be a store with a single location `0`, such that
+  `ρ`  =  `λX:Unit. (!(loc 0))(X)`.
+Then `ρ` is well typed with
+respect to both of the following store typings:
+  δ₁  =  `Unit → Unit`
+  δ₂  =  `Unit → (Unit→Unit)`.
+In fact, it is well typed with respect to any store typing of the form
+  δ   =  `Uniτ → τ`
+for any type `τ`.
+:::
 
-(** FULL: This statement is fine for all of the reduction rules except
-    the allocation rule [refValue].  The problem is that this rule
-    yields a store with a larger domain than the initial store, which
-    falsifies the conclusion of the above statement: if `st'` includes
-    a binding for a fresh location `l`, then `l` cannot be in the
-    domain of [ST], and it will not be the case that [t'] (which
-    definitely mentions `l`) is typable under [ST]. *)
-(** TERSE: This works... for all but _one_ of the reduction rules!
-    (Which?) *)
-(** TERSE: *** *)
-(** TERSE: The [refValue] rule is the problem:
+```lean
+theorem store_not_unique:
+  exists ρ, exists δ₁, exists δ₂,
+    δ₁ ⊢ ρ ∧ δ₂ ⊢ ρ ∧ δ₁ ≠ δ₂ := by
+  solution!
+    exists (<{ λX:Unit. (!(loc 0)) X }> :: []);
+    exists (<{ Unit → Unit }> :: []);
+    exists (<{ Unit → Nat }> :: []);
+    constructor
+    · simp [StoreWellTyped]
+      apply_rules using StlcRefTyping
+      simp
+    · constructor
+      · simp [StoreWellTyped]
+        apply_rules using StlcRefTyping
+        simp
+      · simp
+```
+::::
+:::::
+
+We can now state something closer to the desired preservation property:
+
+```lean +error
+theorem preservation_less_wrong (δ : StoreTy) (τ : Ty) (t t' : Tm) (ρ ρ' : Store) :
+  <{ ∅ / δ ⊢ t ⦂ τ }> →
+  t / ρ ⟶ t' / ρ' →
+  δ ⊢ ρ →
+  <{ ∅ / δ ⊢ t' ⦂ τ }> := by
+```
+
+::::full
+This statement is fine for all of the reduction rules except
+the allocation rule `refValue`.  The problem is that this rule
+yields a store with a larger domain than the initial store, which
+falsifies the conclusion of the above statement: if `ρ'` includes
+a binding for a fresh location `l`, then `l` cannot be in the
+domain of `δ`, and it will not be the case that `t'` (which
+definitely mentions `l`) is typable under `δ`.
+::::
+
+::::terse
+This works... for all but _one_ of the reduction rules! (Which?)
+::::
+
+::::terse
+The `refValue` rule is the problem
 ```display
-                   -------------------------------- (refValue)
-                   ref v / st ⟶ loc |st| / st,v
+    -------------------------------- (refValue)
+        ref v / ρ ⟶ loc |ρ| / ρ,v
 ```
-    It allocates a fresh location `l` and adds it to the store, but
-    the store typing [ST] doesn't know about `l`, so [t'] won't be
-    typeable under [ST]. *)
-(** TERSE: *** *)
 
-(** For example, the term `ref 5` is typeable in the empty context and
-    empty store typing, but it steps to [loc 0], which is not typeable
-    with an empty store typing. *)
+It allocates a fresh location `l` and adds it to the store, but
+the store typing `δ` doesn't know about `l`, so `t'` won't be
+typeable under `δ`.
 
-(* ############################################ *)
-(** ** Extending Store Typings *)
+For example, the term `ref 5` is typeable in the ∅ context and
+∅ store typing, but it steps to `loc 0`, which is not typeable
+with an ∅ store typing.
+::::
 
-(** FULL: Evidently, since the store can increase in size during
-    reduction, we need to allow the store _typing_ to grow during
-    reduction as well. This motivates the following definition.  We
-    say that the store type [ST'] _extends_ [ST] if [ST'] is just [ST]
-    with some new types added to the end. *)
-(** TERSE: Intuition: Since the store can grow during reduction, we
-    need to let the store _typing_ grow too... *)
+## Extending Store Typings
 
-Inductive extends : store_ty → store_ty → Prop :=
-  | extends_nil  : forall ST',
-      extends ST' nil
-  | extends_cons : forall x ST' ST,
-      extends ST' ST →
-      extends (x::ST') (x::ST).
+::::full
+Evidently, since the store can increase in size during
+reduction, we need to allow the store _typing_ to grow during
+reduction as well. This motivates the following definition.  We
+say that the store type `δ'` _extends_ `δ` if `δ'` is just `δ`
+with some new types added to the end.
+::::
 
-(** For example, the store typing [ [Nat] ] with a single location of
-    type [Nat] extends the empty store typing. *)
+::::terse
+Intuition: Since the store can grow during reduction, we
+need to let the store _typing_ grow too...
+::::
 
-(* TERSE: HIDEFROMHTML *)
-Hint Constructors extends : core.
+```lean
+inductive Extends : StoreTy → StoreTy → Prop where
+  | nil (δ' : StoreTy) : Extends δ' []
+  | cons (τ : Ty) {δ' δ : StoreTy} (h : Extends δ' δ) :
+      Extends (τ::δ') (τ::δ)
 
-(** We'll need a few technical lemmas about extended contexts.
+attribute [StlcRefTyping] Extends.nil Extends.cons
+```
 
-    First, looking up a type in an extended store typing yields the
-    same result as in the original: *)
+For example, the store typing `[Nat]` with a single location of
+type `Nat` extends the empty store typing.
 
-Lemma extends_lookup : forall l ST ST',
-  l < length ST →
-  extends ST' ST →
-  store_Tlookup l ST' = store_Tlookup l ST.
-(* FOLD *)
-Proof with auto.
-  intros l ST.
-  generalize dependent l.
-  induction ST as [|a ST2]; intros l ST' Hlen HST'.
-  - (* nil *) inversion Hlen.
-  - (* cons *) unfold store_Tlookup in *.
-    destruct ST'.
-    + (* ST' = nil *) inversion HST'.
-    + (* ST' = a' :: ST'2 *)
-      inversion HST'; subst.
-      destruct l as [|l'].
-      * (* l = 0 *) auto.
-      * (* l = S l' *) simpl. apply IHST2...
-        simpl in Hlen; lia.
-Qed.
-(* /FOLD *)
+We'll need a few technical lemmas about extended contexts.
+First, looking up a type in an extended store typing yields the
+same result as in the original:
 
-(** Next, if [ST'] extends [ST], the length of [ST'] is at least that
-    of [ST]. *)
+```lean
+theorem extends_lookup {l : Nat} {δ δ' : StoreTy}
+  (h₁ : l < δ.length)
+  (h₂ : Extends δ' δ) :
+  δ'[l] = δ[l] := by
 
-Lemma length_extends : forall l ST ST',
-  l < length ST →
-  extends ST' ST →
-  l < length ST'.
-(* FOLD *)
-Proof with eauto.
-  intros. generalize dependent l. induction H0; intros l Hlen.
-    - inversion Hlen.
-    - simpl in *.
-      destruct l; try lia.
-        apply →Nat.succ_lt_mono. apply IHextends. lia.
-Qed.
-(* /FOLD *)
+    induction δ generalizing l δ' with
+    | nil => simp_all
+    | cons hd tl ih =>
+      cases δ' with
+      | nil => inversion h₂
+      | cons hd' tl' =>
+        inversion h₂
+        cases l with
+        | zero => rfl
+        | succ l =>
+          simp only [StoreTy_get_succ_tl]; apply ih
+          · simp_all
+          · assumption
+```
 
-(** Finally, [ST ++ T] extends [ST], and [extends] is reflexive. *)
+Next, if `δ'` extends `δ`, the length of `δ'` is at least that of `δ`.
 
-Lemma extends_app : forall ST T,
-  extends (ST ++ T) ST.
-(* FOLD *)
-Proof.
-  induction ST; intros T.
-  auto.
-  simpl. auto.
-Qed.
-(* /FOLD *)
+```lean
+theorem length_extends {l : Nat} {δ δ' : StoreTy}
+  (h₁ : l < δ.length)
+  (h₂ : Extends δ' δ) :
+  l < δ'.length := by
+    induction h₂ generalizing l with
+    | nil => simp_all
+    | cons τ h ih =>
+        simp only [List.length_cons]
+        cases l with
+        | zero => lia
+        | succ l' =>
+          apply Nat.succ_lt_succ; apply ih
+          simp_all
+```
 
-Lemma extends_refl : forall ST,
-  extends ST ST.
-(* FOLD *)
-Proof.
-  induction ST; auto.
-Qed.
-(* /FOLD *)
-(* TERSE: /HIDEFROMHTML *)
+Finally, `δ ++ δ'` extends `δ`, and `Extends` is reflexive.
 
-(* ################################### *)
-(** ** Preservation, Finally *)
+```lean
+theorem extends_app (δ δ' : StoreTy) : Extends (δ ++ δ') δ := by
+  induction δ generalizing δ' <;> apply_rules using StlcRefTyping
 
-(** We can now give the final, correct statement of the type
-    preservation property: *)
+theorem extends_refl (δ : StoreTy) : Extends δ δ := by
+  induction δ <;> apply_rules using StlcRefTyping
+```
 
-Definition preservation_theorem := forall ST t t' T st st',
-  <{ empty / ST ⊢ t ⦂ T }> →
-  store_well_typed ST st →
-  t / st ⟶ t' / st' →
-  exists ST',
-     extends ST' ST /\
-     <{ empty / ST' ⊢ t' ⦂ T }> /\
-     store_well_typed ST' st'.
+## Preservation, Finally
 
-(** FULL: Note that the preservation theorem merely asserts that there
-    is _some_ store typing [ST'] extending [ST] (i.e., agreeing with
-    [ST] on the values of all the old locations) such that the new
-    term [t'] is well typed with respect to [ST']; it does not tell us
-    exactly what [ST'] is.  It is intuitively clear, of course, that
-    [ST'] is either [ST] or else exactly [ST ++ τ₁::nil], where [τ₁]
-    is the type of the value [v₁] in the extended store [st ++
-    v₁::nil], but stating this explicitly would complicate the
-    statement of the theorem without making it any more useful: the
-    weaker version above is already in the right form (because its
-    conclusion implies its hypothesis) to "turn the crank" repeatedly
-    and conclude that every _sequence_ of reduction steps preserves
-    well-typedness.  Combining this with the progress property, we
-    obtain the usual guarantee that "well-typed programs never go
-    wrong."
+We can now give the final, correct statement of the type
+preservation property:
 
-    In order to prove this, we'll need a few lemmas, as usual. *)
-(** TERSE: This gives us just what we need to "turn the
-    crank" when applying the theorem to multi-step reduction
-    sequences. *)
+```lean
+def preservation_theorem {δ : StoreTy} {t t' : Tm} {τ : Ty} {ρ ρ' : Store} :=
+  (hTy : <{ ∅ / δ ⊢ t ⦂ τ }>) →
+  (hStoreTy : δ ⊢ ρ) →
+  (hEval : t / ρ ⟶ t' / ρ') →
+    ∃ δ', Extends δ' δ ∧ (<{ ∅ / δ' ⊢ t' ⦂ τ }>) ∧ (δ' ⊢ ρ')
+```
 
-(* TERSE: HIDEFROMHTML *)
-(* ################################### *)
-(** ** Substitution Lemma *)
+::::full
+Note that the preservation theorem merely asserts that there
+is _some_ store typing `δ'` extending `δ` (i.e., agreeing with
+`δ` on the values of all the old locations) such that the new
+term `t'` is well typed with respect to `δ'`; it does not tell us
+exactly what `δ'` is.  It is intuitively clear, of course, that
+`δ'` is either `δ` or else exactly `δ ++ [τ₁]`, where `τ₁`
+is the type of the value `v₁` in the extended store `ρ ++ [v₁]`,
+but stating this explicitly would complicate the
+statement of the theorem without making it any more useful: the
+weaker version above is already in the right form (because its
+conclusion implies its hypothesis) to "turn the crank" repeatedly
+and conclude that every _sequence_ of reduction steps preserves
+well-typedness.  Combining this with the progress property, we
+obtain the usual guarantee that "well-typed programs never go
+wrong."
 
-(** TERSE: To prove preservation, we need to re-develop the rest of
-    the machinery that we saw for the pure STLC (plus a couple of new
-    things about store typings and extension)... *)
-(** FULL: First, we need an easy extension of the standard substitution
-    lemma, along with the same machinery about context invariance that
-    we used in the proof of the substitution lemma for the STLC. *)
+In order to prove this, we'll need a few lemmas, as usual.
+::::
 
-Lemma weakening : forall Γ Gamma' ST t T,
-     includedin Γ Gamma' →
-     <{ Γ / ST ⊢ t ⦂ T }> →
-     <{ Gamma' / ST ⊢ t ⦂ T }>.
-Proof.
-  intros Γ Gamma' ST t T H Ht.
-  generalize dependent Gamma'.
-  induction Ht; eauto using includedin_update.
-Qed.
+::::terse
+This gives us just what we need to "turn the
+crank" when applying the theorem to multi-step reduction
+sequences.
+::::
 
-Lemma weakening_empty : forall Γ ST t T,
-     <{ empty / ST ⊢ t ⦂ T }> →
-     <{ Γ / ST ⊢ t ⦂ T }>.
-Proof.
-  intros Γ ST t T.
-  eapply weakening.
-  discriminate.
-Qed.
+### Substitution Lemma
 
-Lemma substitution_preserves_typing : forall Γ ST x U t v T,
-  <{ x |→ U; Γ / ST ⊢ t ⦂ T }> →
-  <{ empty / ST ⊢ v ⦂ U }>  →
-  <{ Γ / ST ⊢ [x:=v]t ⦂ T }>.
-(* FOLD *)
-Proof.
-  intros Γ ST x U t v T Ht Hv.
-  generalize dependent Γ. generalize dependent T.
-  induction t; intros T Γ H;
-  (* in each case, we'll want to get at the derivation of H *)
-    inversion H; clear H; subst; simpl; eauto.
-  - (* var *)
-    rename s into y. destruct (String.eqb_spec x y); subst.
-    + (* x=y *)
-      rewrite update_eq in H2.
-      injection H2 as H2; subst.
-      apply weakening_empty. assumption.
-    + (* x<>y *)
-      apply T_Var. rewrite update_neq in H2; auto.
-  - (* abs *)
-(* INSTRUCTORS: Inconsistent between 8.12.0 and 8.12.1!
-   rename t0 into T. *)
-    rename s into y.
-    destruct (String.eqb_spec x y); subst; apply T_Abs.
-    + (* x=y *)
-      rewrite update_shadow in H5. assumption.
-    + (* x<>y *)
-      apply IHt.
-      rewrite update_permute; auto.
-Qed.
-(* /FOLD *)
-(* TERSE: /HIDEFROMHTML *)
+::::terse
+To prove preservation, we need to re-develop the rest of
+the machinery that we saw for the pure STLC (plus a couple of new
+things about store typings and extension)...
+::::
 
-(* ################################### *)
-(** ** Assignment Preserves Store Typing *)
+::::full
+First, we need an easy extension of the standard substitution
+lemma, along with the same machinery about context invariance that
+we used in the proof of the substitution lemma for the STLC.
+::::
 
-(** Next, we must show that replacing the contents of a cell in the
-    store with a new value of appropriate type does not change the
-    overall type of the store.  (This is needed for the [assign]
-    rule.) *)
+```lean
+theorem weakening {Γ Γ' : Context} {δ : StoreTy} {t : Tm} {τ: Ty}
+    (hi : Γ ⊆ Γ')
+    (ht : <{ Γ / δ ⊢ t ⦂ τ }>) :
+     <{ Γ' / δ ⊢ t ⦂ τ }> := by
+  induction ht generalizing Γ' with (apply_rules [PartialMap.update_subset] using StlcRefTyping)
+```
 
-Lemma assign_pres_store_typing : forall ST st l t,
-  l < length st →
-  store_well_typed ST st →
-  <{ empty / ST ⊢ t ⦂ $(store_Tlookup l ST) }> →
-  store_well_typed ST (replace l t st).
-(* FOLD *)
-Proof with auto.
-  intros ST st l t Hlen HST Ht.
-  inversion HST; subst.
-  split. rewrite length_replace...
-  intros l' Hl'.
-  destruct (l' =? l) eqn: Heqll'.
-  - (* l' = l *)
-    apply eqb_eq in Heqll'; subst.
-    rewrite lookup_replace_eq...
-  - (* l' <> l *)
-    apply eqb_neq in Heqll'.
-    rewrite lookup_replace_neq...
-    rewrite length_replace in Hl'.
-    apply H0...
-Qed.
-(* /FOLD *)
+```lean
+theorem weakening_empty {Γ : Context} {δ : StoreTy} {t : Tm} {τ: Ty}
+    (ht :<{ ∅ / δ ⊢ t ⦂ τ }>) :
+    <{ Γ / δ ⊢ t ⦂ τ }> := by
+  apply weakening _ ht
+  intro _ _ h
+  rw [PartialMap.getElem_empty] at h
+  contradiction
+```
 
-(* ######################################## *)
-(** ** Weakening for Stores *)
+```lean
+theorem substitution_preserves_typing (Γ : Context) (δ : StoreTy) (x : String) (τ₁ : Ty) (t v : Tm) (τ : Ty)
+    (ht : <{ x ↦ τ₁ ; Γ / δ⊢ t ⦂ τ }>)
+    (hv : <{ ∅ / δ ⊢ v ⦂ τ₁ }>) :
+    <{ Γ / δ ⊢ [x := v] t ⦂ τ }> := by
+  sorry
+```
 
-(** Finally, we need a lemma on store typings, stating that, if a
-    store typing is extended with a new location, the extended one
-    still allows us to assign the same types to the same terms as the
-    original. *)
+### Assignment Preserves Store Typing
 
-Lemma store_weakening : forall Γ ST ST' t T,
-  extends ST' ST →
-  <{ Γ / ST ⊢ t ⦂ T }> →
-  <{ Γ / ST' ⊢ t ⦂ T }>.
-(* FOLD *)
-Proof with eauto.
-  intros. induction H0; eauto.
-  - (* T_Loc *)
-    rewrite <- (extends_lookup _ _ ST')...
-    apply T_Loc.
-    eapply length_extends...
-Qed.
-(* /FOLD *)
+Next, we must show that replacing the contents of a cell in the
+store with a new value of appropriate type does not change the
+overall type of the store.  (This is needed for the `assign`
+rule.)
 
-(** TERSE: *** *)
+```lean
+theorem assign_pres_store_typing {δ : StoreTy} {ρ : Store} {l : Nat} {t : Tm}
+  (hLen : l < ρ.length)
+  (hStoreTy : δ ⊢ ρ)
+  (hTy : <{ ∅ / δ ⊢ t ⦂ ~(δ[l]) }>) :
+  δ ⊢ ρ.set l t := by
+    sorry
+```
 
-(** We can use the [store_weakening] lemma to prove that if a store is
-    well typed with respect to a store typing, then the store extended
-    with a new term `τ` will still be well typed with respect to the
-    store typing extended with `τ`'s type. *)
+### Weakening for Stores
 
-Lemma store_well_typed_app : forall ST st t₁ τ₁,
-  store_well_typed ST st →
-  <{ empty / ST ⊢ t₁ ⦂ τ₁ }> →
-  store_well_typed (ST ++ τ₁::nil) (st ++ t₁::nil).
-(* FOLD *)
-Proof with auto.
-  intros.
-  unfold store_well_typed in *.
-  destruct H as [Hlen Hmatch].
-  rewrite app_length, add_comm. simpl.
-  rewrite app_length, add_comm. simpl.
-  split...
-  - (* types match. *)
-    intros l Hl.
-    unfold store_lookup, store_Tlookup.
-    apply le_lt_eq_dec in Hl; destruct Hl as [Hlt | Heq].
-    + (* l < length st *)
-      apply <-Nat.succ_lt_mono in Hlt.
-      rewrite !app_nth1...
-      * apply store_weakening with ST. apply extends_app.
-        apply Hmatch...
-      * rewrite Hlen...
-    + (* l = length st *)
-      injection Heq as Heq; subst.
-      rewrite app_nth2; try lia.
-      rewrite <- Hlen.
-      rewrite sub_diag. simpl.
-      apply store_weakening with ST...
-      { apply extends_app. }
-      rewrite app_nth2; [|lia].
-      rewrite sub_diag. simpl. assumption.
-Qed.
-(* /FOLD *)
+Finally, we need a lemma on store typings, stating that, if a
+store typing is extended with a new location, the extended one
+still allows us to assign the same types to the same terms as the
+original.
 
-(* ################################### *)
-(** ** Preservation! *)
+```lean
+theorem store_weakening {Γ : Context} {δ δ' : StoreTy} {t : Tm} {τ : Ty}
+  (hExt : Extends δ' δ)
+  (hTy : <{ Γ / δ ⊢ t ⦂ τ }>) :
+  <{ Γ / δ' ⊢ t ⦂ τ }> := by
+    sorry
+```
 
-(** Now that we've got everything set up right, the proof of
-    preservation is actually quite straightforward.  *)
+We can use the `store_weakening` lemma to prove that if a store is
+well typed with respect to a store typing, then the store extended
+with a new term `τ` will still be well typed with respect to the
+store typing extended with `τ`'s type.
 
-(* TERSE: HIDEFROMHTML *)
-(** Begin with one technical lemma: *)
+```lean
+theorem store_well_typed_app {δ : StoreTy} {ρ : Store} {t₁ : Tm} {τ₁ : Ty}
+  (hStore : δ ⊢ ρ)
+  (hTy : <{ ∅ / δ ⊢ t₁ ⦂ τ₁ }>) :
+  StoreWellTyped (δ.concat τ₁) (ρ.concat t₁) := by
+    sorry
+```
 
-Lemma nth_eq_last : forall A (l:list A) x d,
-  nth (length l) (l ++ x::nil) d = x.
-(* FOLD *)
-Proof.
-  induction l; intros; [ auto | simpl; rewrite IHl; auto ].
-Qed.
-(* /FOLD *)
+### Preservation!
 
-(** And here, at last, is the preservation theorem: *)
+Now that we've got everything set up right, the proof of
+preservation is actually quite straightforward:
 
-Theorem preservation : forall ST t t' T st st',
-  <{ empty / ST ⊢ t ⦂ T }> →
-  store_well_typed ST st →
-  t / st ⟶ t' / st' →
-  exists ST',
-     extends ST' ST /\
-     <{ empty / ST' ⊢ t' ⦂ T }> /\
-     store_well_typed ST' st'.
-(* FOLD *)
-Proof with eauto using store_weakening, extends_refl.
-  remember empty as Γ.
-  intros ST t t' T st st' Ht.
-  generalize dependent t'.
-  induction Ht; intros t' HST Hstep;
-    subst; try solve_by_invert; inversion Hstep; subst;
-    try (eauto using store_weakening, extends_refl).
-  (* T_App *)
-  - (* appAbs *) exists ST.
-    inversion Ht1; subst.
-    split; try split... eapply substitution_preserves_typing...
-  - (* app₁ *)
-    eapply IHHt1 in H0...
-    destruct H0 as [ST' [Hext [Hty Hsty```.
-    exists ST'...
-  - (* app₂ *)
-    eapply IHHt2 in H5...
-    destruct H5 as [ST' [Hext [Hty Hsty```.
-    exists ST'...
-  - (* T_Succ *)
-    + (* ST_Succ *)
-      eapply IHHt in H0...
-      destruct H0 as [ST' [Hext [Hty Hsty```.
-      exists ST'...
-  - (* T_Pred *)
-    + (* ST_Pred *)
-      eapply IHHt in H0...
-      destruct H0 as [ST' [Hext [Hty Hsty```.
-      exists ST'...
-  (* T_Mult *)
-  - (* ST_Mult1 *)
-    eapply IHHt1 in H0...
-    destruct H0 as [ST' [Hext [Hty Hsty```.
-    exists ST'...
-  - (* ST_Mult2 *)
-    eapply IHHt2 in H5...
-    destruct H5 as [ST' [Hext [Hty Hsty```.
-    exists ST'...
-  - (* T_If0 *)
-    + (* ST_If0_1 *)
-      eapply IHHt1 in H0...
-      destruct H0 as [ST' [Hext [Hty Hsty```.
-      exists ST'. split...
-  (* ref *)
-  - (* refValue *)
-    exists (ST ++ τ₁::nil).
-    inversion HST; subst.
-    split.
-    { apply extends_app. }
-    split.
-    { replace <{{ Ref τ₁ }}>
-        with <{{ Ref $(store_Tlookup (length st) (ST ++ τ₁::nil)) }}>.
-      { apply T_Loc.
-        rewrite <- H. rewrite app_length, add_comm. simpl. lia. }
-      unfold store_Tlookup. rewrite <- H. rewrite nth_eq_last.
-      reflexivity. }
-    apply store_well_typed_app; assumption.
-  - (* ref *)
-    eapply IHHt in H0...
-    destruct H0 as [ST' [Hext [Hty Hsty```.
-    exists ST'...
-  (* deref *)
-  - (* derefLoc *)
-    exists ST. split; try split...
-    destruct HST as [_ Hsty].
-    replace τ₁ with (store_Tlookup l ST).
-    apply Hsty...
-    inversion Ht; subst...
-  - (* deref *)
-    eapply IHHt in H0...
-    destruct H0 as [ST' [Hext [Hty Hsty```.
-    exists ST'...
-  (* assign *)
-  - (* assign *)
-    exists ST. split; try split...
-    eapply assign_pres_store_typing...
-    inversion Ht1; subst...
-  - (* assign₁ *)
-    eapply IHHt1 in H0...
-    destruct H0 as [ST' [Hext [Hty Hsty```.
-    exists ST'...
-  - (* assign₂ *)
-    eapply IHHt2 in H5...
-    destruct H5 as [ST' [Hext [Hty Hsty```.
-    exists ST'...
-Qed.
-(* /FOLD *)
-(* TERSE: /HIDEFROMHTML *)
+```lean
+theorem preservation {δ : StoreTy} {t t' : Tm} {τ : Ty} {ρ ρ' : Store}
+  (hTy : <{ ∅ / δ ⊢ t ⦂ τ }>)
+  (hStoreTy : δ ⊢ ρ)
+  (hEval : t / ρ ⟶ t' / ρ') :
+    ∃ δ', Extends δ' δ ∧ (<{ ∅ / δ' ⊢ t' ⦂ τ }>) ∧ (δ' ⊢ ρ') := by
+    sorry
+```
 
-(* TERSE: HIDEFROMHTML *)
+:::::full
 ::::exercise (rating := 3) (name := "preservation_informal") (manual := true)
-(** Write a careful informal proof of the preservation theorem,
-    concentrating on the [T_App], [deref], [assign], and [ref]
-    cases.
+Write a careful informal proof of the preservation theorem,
+concentrating on the `app`, `deref`, `assign`, and `ref`
+cases.
 
-(* SOLUTION *)
-    _Proof_: By induction on a derivation of [empty / [] ⊢ t : T].
+:::solution
+_Proof_: By induction on a derivation of `∅ / [] ⊢ t : τ`.
 
-    - If the last rule in the derivation is [T_App], then [t = t₁ t₂]
-      for some `t₁` and `t₂` and [T = T12], with [empty / ST ⊢ t₁ :
-      T11→T12] and [empty / ST ⊢ t₁ : T11].  There are three cases to
-      consider, one for each rule that could have been used to show
-      that [t₁ t₂] takes a step to [t'].
+- If the last rule in the derivation is `app`, then `t = t₁ t₂`
+  for some `t₁` and `t₂` and `τ = τ₁₂`, with `∅ / δ ⊢ t₁ : τ₁₁ → τ₁₂`
+  and `∅ / δ ⊢ t₁ : τ₁₁`.  There are three cases to
+  consider, one for each rule that could have been used to show
+  that `t₁ t₂` takes a step to `t'`.
 
-        - Suppose [t₁ t₂] takes a step by [app₁], with `t₁`
-          stepping to [t₁'] and new store `st'`.  Then by the IH there
-          is some store typing [ST'] such that [ST'] extends [ST],
-          `st'` is well typed with respect to [ST'], and [empty / ST'
-          ⊢ t₁' : T11→T12].  We also know [empty / ST' ⊢ t₂ : T11]
-          by the [store_weakening] lemma.  Hence, [empty / ST' ⊢ t₁'
-          t₂] by [T_App].
+    - Suppose `t₁ t₂` takes a step by `app₁`, with `t₁`
+      stepping to `t₁'` and new store `ρ'`.  Then by the IH there
+      is some store typing `δ'` such that `δ'` extends `δ`,
+      `ρ'` is well typed with respect to `δ'`, and `∅ / δ' ⊢ t₁' : τ₁₁ → τ₁₂`.
+      We also know `∅ / δ' ⊢ t₂ : τ₁₁`
+      by the `store_weakening` lemma.  Hence, `∅ / δ' ⊢ t₁' t₂` by `app`.
 
-        - The [app₂] case is similar.
+    - The `app₂` case is similar.
 
-        - Suppose [t₁ t₂] takes a step by [appAbs].  Then [t₁ =
-          λx:T11,t12] and [t₁ t₂] steps to `[x:=t₂]t12]; the
-          desired result now follows from the substitution lemma,
-          taking [ST' = ST].
+    - Suppose `t₁ t₂` takes a step by `appAbs`.  Then `t₁ = λx:τ₁₁. t₁₂`
+      and `t₁ t₂` steps to `[x:=t₂] t₁₂`; the
+      desired result now follows from the substitution lemma,
+      taking `δ' = δ`.
 
-    - If the last rule in the derivation is [ref], then [t = ref t₁]
-      for some `t₁` and [empty / ST ⊢ t₁ : τ₁] for some [τ₁], with [T
-      = Ref τ₁].  There are two cases to consider, one for each rule
-      that could have been used to show that [ref t₁] takes a step to
-      [t'].
+- If the last rule in the derivation is `ref`, then `t = ref t₁`
+  for some `t₁` and `∅ / δ ⊢ t₁ : τ₁` for some `τ₁`, with `τ = Ref τ₁`.
+  There are two cases to consider, one for each rule
+  that could have been used to show that `ref t₁` takes a step to
+  `t'`.
 
-        - Suppose [ref t₁] takes a step by [ref], with `t₁`
-          stepping to [t₁'] and new store `st'`.  Then by the IH there
-          is some store typing [ST'] such that [ST'] extends [ST],
-          `st'` is well typed with respect to [ST'], and [empty / ST'
-          ⊢ t₁' : τ₁].  Hence, [empty / ST' ⊢ ref t₁' : Ref τ₁] by
-          [ref].
+    - Suppose `ref t₁` takes a step by `ref`, with `t₁`
+      stepping to `t₁'` and new store `ρ'`.  Then by the IH there
+      is some store typing `δ'` such that `δ'` extends `δ`,
+      `ρ'` is well typed with respect to `δ'`, and `∅ / δ' ⊢ t₁' : τ₁`.
+      Hence, `∅ / δ' ⊢ ref t₁' : Ref τ₁` by `ref`.
 
-        - Suppose [ref t₁] takes a step by [refValue].  Then `t₁`
-          is a value, [st' = st ++ t₁::nil], and [t'] is the length of
-          `st` -- i.e., the location of `t₁` in `st'`.  If we choose
-          [ST' = ST ++ τ₁::nil], we obtain
-             - [ST'] extends [ST] by construction
-             - `st'` is well typed with respect to [ST'] because `st`
-               is well typed with respect to [ST] and the last
-               element, `t₁`, has type [τ₁] under [ST],
-               hence also under [ST'] by the store
-               weakening lemma
-             - [empty / ST' ⊢ l : Ref τ₁] by [T_Loc]
-          as required.
+    - Suppose `ref t₁` takes a step by `refValue`.  Then `t₁`
+      is a value, `ρ' = ρ.concat t₁`, and `t'` is the length of
+      `ρ` - i.e., the location of `t₁` in `ρ'`.  If we choose
+      `δ' = δ.concat τ₁`, we obtain
+          - `δ'` extends `δ` by construction
+          - `ρ'` is well typed with respect to `δ'` because `ρ`
+            is well typed with respect to `δ` and the last
+            element, `t₁`, has type `τ₁` under `δ`,
+            hence also under `δ'` by the store
+            weakening lemma
+          - `∅ / δ' ⊢ l : Ref τ₁` by `loc` as required.
 
-    - If the last rule in the derivation is [deref], then [t = !t1]
-      for some `t₁` and [empty / ST ⊢ t₁ : Ref τ].  There are two
-      cases to consider, one for each rule that could have been used
-      to show that [!t1] takes a step to [t'].
+- If the last rule in the derivation is `deref`, then `t = !t₁`
+  for some `t₁` and `∅ / δ ⊢ t₁ : Ref τ`.  There are two
+  cases to consider, one for each rule that could have been used
+  to show that `!t₁` takes a step to `t'`.
 
-        - Suppose [!t1] takes a step by [deref], with `t₁` stepping
-          to [t₁'] and new store `st'`.  Then by the IH there is some
-          store typing [ST'] such that [ST'] extends [ST], `st'` is
-          well typed with respect to [ST'], and [empty / ST' ⊢ t₁' :
-          Ref τ].  Hence, [empty / ST' ⊢ !t₁' : T] by [deref].
+    - Suppose `!t₁` takes a step by `deref`, with `t₁` stepping
+      to `t₁'` and new store `ρ'`.  Then by the IH there is some
+      store typing `δ'` such that `δ'` extends `δ`, `ρ'` is
+      well typed with respect to `δ'`, and `∅ / δ' ⊢ t₁' : Ref τ`.
+      Hence, `∅ / δ' ⊢ !t₁' : τ` by `deref`.
 
-        - Suppose [ref t₁] takes a step by [derefLoc].  Then `t₁`
-          is some location `l` and [t'] is the contents of `st` at
-          location `l`.  Moreover, the typing rule used to derive
-          [empty / ST ⊢ l : Ref τ] must be [T_Loc], so the contents of
-          [ST] at location `l` is `τ`.  Now, since `st` is well typed
-          with respect to [ST], we know that [empty / ST ⊢ t' : T], as
-          required.
+    - Suppose `ref t₁` takes a step by `derefLoc`.  Then `t₁`
+      is some location `l` and `t'` is the contents of `ρ` at
+      location `l`.  Moreover, the typing rule used to derive
+      `∅ / δ ⊢ l : Ref τ` must be `loc`, so the contents of
+      `δ` at location `l` is `τ`.  Now, since `ρ` is well typed
+      with respect to `δ`, we know that `∅ / δ ⊢ t' : τ`, as
+      required.
 
-    - If the last rule in the derivation is [assign], then [t = t₁
-      := t₂] for some `t₁` and `t₂`, with [empty / ST ⊢ t₁ : Ref τ₂]
-      and [empty / ST ⊢ t₂ : τ₂] for some [τ₂]; moreover, [T = Unit].
-      There are now three cases to consider, one for each rule that
-      could have been used to show that [t₁ := t₂] takes a step to
-      [t'].
+- If the last rule in the derivation is `assign`, then `t = t₁ := t₂`
+  for some `t₁` and `t₂`, with `∅ / δ ⊢ t₁ : Ref τ₂`
+  and `∅ / δ ⊢ t₂ : τ₂` for some `τ₂`; moreover, `τ = Unit`.
+  There are now three cases to consider, one for each rule that
+  could have been used to show that `t₁ := t₂` takes a step to
+  `t'`.
 
-        - The cases where [t₁ := t₂] takes a step by either
-          [assign₁] or [assign₂] are similar to the congruence
-          rule cases above.
+    - The cases where `t₁ := t₂` takes a step by either
+      `assign₁` or `assign₂` are similar to the congruence
+      rule cases above.
 
-        - Suppose [t₁ := t₂] takes a step by [assign].  Then `t₁`
-          is some location `l`, `t₂` is some value, [t'] is `unit`,
-          and `st'` is formed from `st` by updating the contents of
-          location `l` with `t₂`.
+    - Suppose `t₁ := t₂` takes a step by `assign`.  Then `t₁`
+      is some location `l`, `t₂` is some value, `t'` is `unit`,
+      and `ρ'` is formed from `ρ` by updating the contents of
+      location `l` with `t₂`.
 
-          Moreover, the typing rule used to derive [empty / ST ⊢ l :
-          Ref τ₂] must be [T_Loc], so the contents of [ST] at location
-          `l` is [τ₂].  Now, [empty / ST ⊢ unit : Unit] by [T_Unit].
-          Moreover, since `st` is well typed with respect to [ST] and
-          we know [empty / ST ⊢ t₂ : τ₂], we know that `st'` is well
-          typed with respect to [ST] by lemma
-          [assign_pres_store_typing].  So we can take [ST' = ST] and
-          finish this case.
+      Moreover, the typing rule used to derive `∅ / δ ⊢ l : Ref τ₂`
+      must be `loc`, so the contents of `δ` at location
+      `l` is `τ₂`.  Now, `∅ / δ ⊢ unit : Unit` by `unit`.
+      Moreover, since `ρ` is well typed with respect to `δ` and
+      we know `∅ / δ ⊢ t₂ : τ₂`, we know that `ρ'` is well
+      typed with respect to `δ` by lemma
+      `assign_pres_store_typing`.  So we can take `δ' = δ` and
+      finish this case.
 
     - (Other cases elided...)
+:::
 
-(* /SOLUTION *)
-*)
+:::grade
+`GRADE_MANUAL 3: preservation_informal`
+:::
 
-(* GRADE_MANUAL 3: preservation_informal *)
-(** [] *)
-(* TERSE: /HIDEFROMHTML *)
+::::
+:::::
 
-(* ################################### *)
-(** ** Progress *)
+## Progress
 
-(** As we've said, progress for this system is pretty easy to prove;
-    the proof is very similar to the proof of progress for the STLC,
-    with a few new cases for the new syntactic constructs. *)
+As we've said, progress for this system is pretty easy to prove;
+the proof is very similar to the proof of progress for the STLC,
+with a few new cases for the new syntactic constructs.
 
-Theorem progress : forall ST t T st,
-  <{ empty / ST ⊢ t ⦂ T }> →
-  store_well_typed ST st →
-  (value t \/ exists t' st', t / st ⟶ t' / st').
-(* FOLD *)
-Proof with eauto.
-  intros ST t T st Ht HST. remember empty as Γ.
-  induction Ht; subst; try solve_by_invert...
-  - (* T_App *)
-    right. destruct IHHt1 as [Ht1p | Ht1p]...
-    + (* t₁ is a value *)
-      inversion Ht1p; subst; try solve_by_invert.
-      destruct IHHt2 as [Ht2p | Ht2p]...
-      * (* t₂ steps *)
-        destruct Ht2p as [t₂' [st' Hstep```.
-        exists <{ (λx0 : T0, t0) t₂' }>, st'...
-    + (* t₁ steps *)
-      destruct Ht1p as [t₁' [st' Hstep```.
-      exists <{ t₁' t₂ }>, st'...
-  - (* T_Succ *)
-    right. destruct IHHt as [Ht1p | Ht1p]...
-    + (* t₁ is a value *)
-      inversion Ht1p; subst; try solve [ inversion Ht ].
-      * (* t₁ is a const *)
-        exists <{ $(S n) }>, st...
-    + (* t₁ steps *)
-      destruct Ht1p as [t₁' [st' Hstep```.
-      exists <{ succ t₁' }>, st'...
-  - (* T_Pred *)
-    right. destruct IHHt as [Ht1p | Ht1p]...
-    + (* t₁ is a value *)
-      inversion Ht1p; subst; try solve [inversion Ht ].
-      * (* t₁ is a const *)
-        exists <{ $(n - 1) }>, st...
-    + (* t₁ steps *)
-      destruct Ht1p as [t₁' [st' Hstep```.
-      exists <{ pred t₁' }>, st'...
-  - (* T_Mult *)
-    right. destruct IHHt1 as [Ht1p | Ht1p]...
-    + (* t₁ is a value *)
-      inversion Ht1p; subst; try solve [inversion Ht1].
-      destruct IHHt2 as [Ht2p | Ht2p]...
-      * (* t₂ is a value *)
-        inversion Ht2p; subst; try solve [inversion Ht2].
-        exists <{ $(n * n0) }>, st...
-      * (* t₂ steps *)
-        destruct Ht2p as [t₂' [st' Hstep```.
-        exists <{ n * t₂' }>, st'...
-    + (* t₁ steps *)
-      destruct Ht1p as [t₁' [st' Hstep```.
-      exists <{ t₁' * t₂ }>, st'...
-  - (* T_If0 *)
-    right. destruct IHHt1 as [Ht1p | Ht1p]...
-    + (* t₁ is a value *)
-      inversion Ht1p; subst; try solve [inversion Ht1].
-      destruct n.
-      * (* n = 0 *) exists t₂, st...
-      * (* n = S n' *) exists t3, st...
-    + (* t₁ steps *)
-      destruct Ht1p as [t₁' [st' Hstep```.
-      exists <{ if0 t₁' then t₂ else t3 }>, st'...
-  - (* ref *)
-    right. destruct IHHt as [Ht1p | Ht1p]...
-    + (* t₁ steps *)
-      destruct Ht1p as [t₁' [st' Hstep```.
-      exists <{ref t₁'}>, st'...
-  - (* deref *)
-    right. destruct IHHt as [Ht1p | Ht1p]...
-    + (* t₁ is a value *)
-      inversion Ht1p; subst; try solve_by_invert.
-      eexists. eexists. apply derefLoc...
-      inversion Ht; subst. inversion HST; subst.
-      rewrite <- H...
-    + (* t₁ steps *)
-      destruct Ht1p as [t₁' [st' Hstep```.
-      exists <{ ! t₁' }>, st'...
-  - (* assign *)
-    right. destruct IHHt1 as [Ht1p|Ht1p]...
-    + (* t₁ is a value *)
-      destruct IHHt2 as [Ht2p|Ht2p]...
-      * (* t₂ is a value *)
-        inversion Ht1p; subst; try solve_by_invert.
-        eexists. eexists. apply assign...
-        inversion HST; subst. inversion Ht1; subst.
-        rewrite H in H4...
-      * (* t₂ steps *)
-        destruct Ht2p as [t₂' [st' Hstep```.
-        exists <{ t₁ := t₂' }>, st'...
-    + (* t₁ steps *)
-      destruct Ht1p as [t₁' [st' Hstep```.
-      exists <{ t₁' := t₂ }>, st'...
-Qed.
-(* /FOLD *)
-
-(* ################################### *)
-(** * References and Nontermination *)
-
-(** An important fact about the STLC (proved in chapter \CHAP{Norm})
-    is that it is is _normalizing_ -- that is, every well-typed term
-    can be reduced to a value in a finite number of steps.
-
-    What about STLC + references?  Surprisingly, adding references
-    causes us to lose the normalization property: there exist
-    well-typed terms in the STLC + references which can continue to
-    reduce forever, without ever reaching a normal form! *)
-
-(** TERSE: *** *)
-
-(** How can we construct such a term?  The main idea is to make a
-    function which calls itself.  We first make a function which calls
-    another function stored in a reference cell; the trick is that we
-    then smuggle in a reference to itself!
+```lean
+theorem progress (δ : StoreTy) (t : Tm) (τ : Ty) (ρ : Store)
+  (hTy : <{ ∅ / δ ⊢ t ⦂ τ }>)
+  (hStoreTy : δ ⊢ ρ) :
+  (t.IsValue ∨ ∃ t' ρ', t / ρ ⟶ t' / ρ') := by
+    sorry
 ```
-   (\r:Ref (Unit → Unit),
-        r := (λx:Unit,(!r) unit); (!r) unit)
-   (ref (λx:Unit,unit))
+
+# References and Nontermination
+
+An important fact about the STLC
+is that it is is _normalizing_ - that is, every well-typed term
+can be reduced to a value in a finite number of steps.
+
+What about STLC + references?  Surprisingly, adding references
+causes us to lose the normalization property: there exist
+well-typed terms in the STLC + references which can continue to
+reduce forever, without ever reaching a normal form!
+
+How can we construct such a term?  The main idea is to make a
+function which calls itself.  We first make a function which calls
+another function stored in a reference cell; the trick is that we
+then smuggle in a reference to itself!
+
+```display
+   (λR: Ref (Unit → Unit),
+        R := (λx:Unit,(!R) unit); (!R) unit)
+   (ref (λX:Unit.unit))
 ```
-*)
 
-(** FULL: First, [ref (λx:Unit,unit)] creates a reference to a cell of
-    type [Unit → Unit].  We then pass this reference as the argument
-    to a function which binds it to the name `r`, and assigns to it
-    the function [λx:Unit,(!r) unit] -- that is, the function which
-    ignores its argument and calls the function stored in `r` on the
-    argument `unit`; but of course, that function is itself!  To start
-    the divergent loop, we execute the function stored in the cell by
-    evaluating [(!r) unit].
 
-   Here is the divergent term in Rocq: *)
-(* SOONER: Anton suggests that the program given above would be easier to
-   understand for the reader if it was first presented in the form
-   [let r = ref (fun (x : unit) → ()) in
-    r := (fun (x : unit) → !r ());
-    !r ()]
-   or even
-   [let r = ref (fun (_ : unit) → ()) in
-    r := (fun (_ : unit) → !r ());
-    !r ()] *)
+::::full
+First, `ref (λX:Unit.unit)` creates a reference to a cell of
+type `Unit → Unit`.  We then pass this reference as the argument
+to a function which binds it to the name `R`, and assigns to it
+the function `λX:Unit.(!R) unit` - that is, the function which
+ignores its argument and calls the function stored in `R` on the
+argument `unit`; but of course, that function is itself!  To start
+the divergent loop, we execute the function stored in the cell by
+evaluating `(!r) unit`.
 
-(* TERSE: HIDEFROMHTML *)
-Module ExampleVariables.
+Here is the divergent term in Lean:
+::::
 
-(* NOTATION: LATER: Urg: Here they are definitions, not notations.  Try to make
-   this consistent with MoreStlc, Stlc, etc. *)
+```lean
+namespace RefsAndNontermination
 
-Open Scope string_scope.
+def loop_fun := <{ λX : Unit. (!R) unit }>
 
-Definition x := "x".
-Definition y := "y".
-Definition r := "r".
-Definition s := "s".
+def loop :=
+  <{ (λR : Ref (Unit → Unit). (( R := (λX : Unit. (!R) unit) );  ( (! R) unit ) ))
+     (ref (λX : Unit. unit)) }>
+```
 
-End ExampleVariables.
+This term is well typed:
 
-Module RefsAndNontermination.
-Import ExampleVariables.
+```lean
+theorem loop_typeable : ∃ τ, <{ ∅ / [] ⊢ loop ⦂ τ }> := by sorry
+```
 
-Definition loop_fun :=
-  <{ λx : Unit, (!r) unit }>.
+To show formally that the term diverges, we first define the
+`step_closure` of the single-step reduction relation, written
+`⟶+`.  This is just like the reflexive step closure of
+single-step reduction (which we're been writing `⟶*`), except
+that it is not reflexive: `t ⟶+ t'` means that `τ` can reach
+`t'` by _one or more_ steps of reduction.
 
-Definition loop :=
-  <{ (\r : Ref (Unit → Unit),
-        (( r := loop_fun );
-        ( (! r) unit ) ))
-     (ref (λx : Unit, unit)) }> .
-(** This term is well typed: *)
+```lean
+inductive StepClosure {X:Type} (R: Relation X) : X → X → Prop :=
+  | one (x y z : X) (h₁ : R x y) : StepClosure R x y
+  | step (x y z : X) (h₁ : R x y) (h₂ : StepClosure R y z) : StepClosure R x z
 
-Import ListNotations.
+scoped notation:40
+  t:71 " / " ρ:41 " ⟶+ " t':71 " / " ρ':41 =>
+  StepClosure Step (t, ρ) (t', ρ')
+```
 
-Lemma loop_typeable : exists T, <{ empty / [] ⊢ loop ⦂ T }>.
-(* FOLD *)
-Proof with eauto.
-  eexists. unfold loop. unfold loop_fun.
-  eapply T_App...
-  eapply T_Abs...
-  eapply T_App...
-    eapply T_Abs. eapply T_App. eapply deref. eapply T_Var.
-    rewrite update_neq; [|intros; discriminate].
-    rewrite update_eq. reflexivity. auto.
-  eapply assign.
-    eapply T_Var. rewrite update_eq. reflexivity.
-  eapply T_Abs.
-    eapply T_App...
-      eapply deref. eapply T_Var. reflexivity.
-Qed.
-(* /FOLD *)
+Now, we can show that the expression {lean}`loop` reduces to the
+expression `!(loc 0) unit` and the size-one store
+`[R:=(loc 0)] loop_fun`.
 
-(** To show formally that the term diverges, we first define the
-    [step_closure] of the single-step reduction relation, written
-    [⟶+].  This is just like the reflexive step closure of
-    single-step reduction (which we're been writing [⟶*]), except
-    that it is not reflexive: [t ⟶+ t'] means that `τ` can reach
-    [t'] by _one or more_ steps of reduction. *)
+As a convenience, we introduce a slight variant of the {tactic}`normalize`
+tactic, called `reduce`, which tries solving the goal with
+{lean}`Multi.refl` at each step, instead of waiting until the goal can't
+be reduced any more. Of course, the whole point is that {lean}`loop`
+doesn't normalize, so the old {tactic}`normalize` tactic would just go
+into an infinite loop reducing it forever!
 
-Inductive step_closure {X:Type} (R: relation X) : X → X → Prop :=
-  | sc_one  : forall (x y : X),
-                R x y → step_closure R x y
-  | sc_step : forall (x y z : X),
-                R x y →
-                step_closure R y z →
-                step_closure R x z.
+```lean
+syntax "reduce" " using " ident,+ : tactic
 
-Definition multistep1 := (step_closure step).
-Notation "t₁ '/' st '⟶+' t₂ '/' st'" :=
-        (multistep1 (t₁,st) (t₂,st'))
-        (at level 40, st at level 39, t₂ at level 39).
+macro_rules
+  | `(tactic| reduce using $xs,*) =>
+    `(tactic|
+      first
+      | apply Multi.refl
+      | (apply Multi.step
+         · solve_by_elim (maxDepth := 15) (constructor := false) only using $xs,*
+         · reduce using $xs,*))
+```
 
-(** Now, we can show that the expression [loop] reduces to the
-    expression [!(loc 0) unit] and the size-one store
-    ```r:=(loc 0)]loop_fun]. *)
+Next, we use {tactic}`reduce` to show that {lean}`loop` steps to
+`!(loc 0) unit`, starting from the ∅ store.
 
-(* LATER: Maybe this one belongs in MoreStlc.v? *)
-(** As a convenience, we introduce a slight variant of the [normalize]
-    tactic, called [reduce], which tries solving the goal with
-    [multi_refl] at each step, instead of waiting until the goal can't
-    be reduced any more. Of course, the whole point is that [loop]
-    doesn't normalize, so the old [normalize] tactic would just go
-    into an infinite loop reducing it forever! *)
+```lean
+theorem loop_steps_to_loop_fun :
+  loop / [] ⟶*  <{ (! (loc 0)) unit }> / [<{ [R := loc 0] loop_fun }>] := by
+    sorry
+```
 
-Ltac print_goal := match goal with |- ?x => idtac x end.
-Ltac reduce :=
-    repeat (print_goal; eapply multi_step ;
-            [ (eauto 10; fail) | compute];
-            try solve [apply multi_refl]).
+Finally, we show that the latter expression reduces in
+two steps to itself!
 
-(** Next, we use [reduce] to show that [loop] steps to
-    [!(loc 0) unit], starting from the empty store. *)
+```lean
+theorem loop_fun_step_self :
+  <{ (! (loc 0)) unit }> / [<{ [R := loc 0] loop_fun }>] ⟶+
+  <{ (! (loc 0)) unit }> / [<{ [R := loc 0] loop_fun }>] := by sorry
+```
 
-Lemma loop_steps_to_loop_fun :
-  loop / nil ⟶*
-  <{ (! (loc 0)) unit }> / cons <{ [r := loc 0] loop_fun }> nil.
-Proof.
-  unfold loop.
-  reduce.
-Qed.
+:::::full
+::::exercise (rating := 4) (name := "factorial_ref")
+Use the above ideas to implement a factorial function in STLC with
+references.  (There is no need to prove formally that it really
+behaves like the factorial.  Just uncomment the example below to make
+sure it gives the correct result when applied to the argument
+`4`.)
 
-(** Finally, we show that the latter expression reduces in
-    two steps to itself! *)
+```lean
+def factorial : Tm :=
+  solution!(
+    <{(λR : (Ref (Nat → Nat) ).
+            (R := (λX : Nat. if0 X then 1 else (X * ( (!R) (pred X) ) ))); !R  )
+      (ref (λX : Nat. X)) }>)
 
-Lemma loop_fun_step_self :
-  <{ (! (loc 0)) unit }> / cons <{ [r := loc 0] loop_fun }> nil ⟶+
-  <{ (! (loc 0)) unit }> / cons <{ [r := loc 0] loop_fun }> nil.
-(* FOLD *)
-Proof with eauto.
-  unfold loop_fun; simpl.
-  eapply sc_step. apply app₁...
-  eapply sc_one. compute. apply appAbs...
-Qed.
-(* /FOLD *)
+theorem factorial_type : <{ ∅ / [] ⊢ factorial ⦂ (Nat → Nat) }> := by sorry
+```
 
-(* EX4 (factorial_ref) *)
-(* GRADE_THEOREM 3: factorial *)
-(* GRADE_THEOREM 3: factorial_type *)
-(** Use the above ideas to implement a factorial function in STLC with
-    references.  (There is no need to prove formally that it really
-    behaves like the factorial.  Just uncomment the example below to make
-    sure it gives the correct result when applied to the argument
-    [4].) *)
-(* SOONER: a bit more explanation here?  (YES!) *)
+:::autogradedHole factorial
+:::
 
-Definition factorial : Tm
-  (* ADMITDEF *) :=
-<{
-  (\r : (Ref (Nat → Nat) ),
-        (r := (λx : Nat, if0 x then 1 else (x * ( (!r) (pred x) ) ))); !r  )
-  (ref (λx : Nat, x))
-  }>.
-(* /ADMITDEF *)
+:::gradeTheorem "3" factorial_type
+:::
 
-Lemma factorial_type : <{ empty / nil ⊢ factorial ⦂ (Nat → Nat) }>.
-Proof with eauto.
-  (* ADMITTED *)
-  unfold factorial.
-  eapply T_App...
-  eapply T_Abs...
-  eapply T_App...
-  eapply assign...
-  eapply T_Abs...
-  eapply T_If0...
-  eapply T_Mult...
-  eapply T_App...
-  eapply deref...
-Qed.
-(* /ADMITTED *)
+If your definition is correct, you should be able to finish
+the example below; the proof should be fully
+automatic using the `reduce` tactic, once the witness is supplied.
 
-(** If your definition is correct, you should be able to just
-    uncomment the example below; the proof should be fully
-    automatic using the [reduce] tactic. *)
+```lean
+theorem factorial_4 : ∃ (ρ : Store), <{ factorial 4 }> / [] ⟶* .const 24 / ρ := by
+  solution!
+    sorry
+```
+::::
+:::::
 
-(* OPEN COMMENT WHEN HIDING SOLUTIONS *)
-Lemma factorial_4 : exists st,
-  <{ factorial 4 }> / nil ⟶* tm_const 24 / st.
-Proof.
-  eexists. unfold factorial. reduce.
-Qed.
-(* CLOSE COMMENT WHEN HIDING SOLUTIONS *)
-(** [] *)
+```lean
+end RefsAndNontermination
+```
 
-(* ################################### *)
-(** * Additional Exercises *)
+# Additional Exercises
 
-(* EX5? (garbage_collector) *)
-(** Challenge problem: modify our formalization to include an account
-    of garbage collection, and prove that it satisfies whatever nice
-    properties you can think to prove about it. *)
-(** [] *)
+:::suppressPreviousHeaderWhenTerse
+:::
 
-End RefsAndNontermination.
-End STLCRef.
-(* TERSE: /HIDEFROMHTML *)
+:::::full
+::::exercise (rating := 5) (name := "factorial_ref") (optional := true)
+Challenge problem: modify our formalization to include an account
+of garbage collection, and prove that it satisfies whatever nice
+properties you can think to prove about it.
+::::
+:::::
+
+```lean
+end STLCRef
+```
