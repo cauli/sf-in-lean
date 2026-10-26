@@ -14,10 +14,6 @@ htmlSplit := .never
 file := some "Smallstep"
 %%%
 
-:::dev "Benjamin Pierce (bcpierce00)"
-The `hiding lean` (above in the source file) should not be needed any more and should be removed from all files everywhere it exists.
-:::
-
 :::dev "Michael Hicks (mwhicks1)"
 This chapter adapts Smallstep to follow Slang, the initial part
 of Imp, on just Aexp and Bexp (without variables). This means that parts
@@ -381,17 +377,27 @@ may be useful if the treatment here feels too terse.)
 
 A _binary relation_ on a type `X` is a family of propositions parameterized
 by two elements of `X` — i.e., a proposition about pairs of elements of
-`X`.
+`X`. The type of a binary relation on a type `X` is `X → X → Prop`.
 ::::
 
 :::terse
-The step relation `⟶` is an example of a relation on `Tm`.
+The step relation `⟶` is an example of a binary relation on `Tm`.
 :::
 
 :::dev "Michael Hicks (mwhicks1)" BeforeNextRelease
 Should we be getting this (and `Deterministic`, `Multi`, etc.
    if appropriate) from the Lean standard library? If not, should we match the
    concepts in CSLib, if they exists there?
+:::
+
+:::dev "Roger Burtonpatel (rogerburtonpatel)" BeforeNextRelease
+@mwhicks1 I looked into this and there is some existing infra, but not much. Mathlib/CSlib have a few
+items (determinism though Relator.RightUnique), but using their transitive closures actually puts a
+step AFTER the multistep, which would change all the inductions.
+We could certainly use a few of the notations for stepping, and change `IsNormalForm` to their
+`Normal`.
+
+I would say put both of these comments in a larger maybe-TODO and delete them for now.
 :::
 
 ```lean
@@ -441,21 +447,19 @@ theorem step_deterministic : Deterministic SimpleArith1.Step := by
   induction h₁ generalizing y₂ with
   | plus n₁ n₂ =>
       intro h₂
-      cases h₂ <;> first | rfl | cases ‹SimpleArith1.Step (.c _) _›
+      cases h₂ <;> try contradiction
+      rfl
   | plusLeft t₁ t₁' t₂ hs ih =>
       intro h₂
-      cases h₂ <;> first | cases ‹SimpleArith1.Step (.c _) _› | rw [ih _ ‹SimpleArith1.Step t₁ _›]
+      cases h₂ <;> try contradiction
+      case plusLeft.plusLeft h => rw [ih _ h]
   | plusRight n₁ t₂ t₂' hs ih =>
       intro h₂
-      cases h₂ <;> first | cases ‹SimpleArith1.Step (.c _) _› | rw [ih _ ‹SimpleArith1.Step t₂ _›]
+      cases h₂ <;> try contradiction
+      case plusRight.plusRight h => rw [ih _ h]
 
 end SimpleArith2
 ```
-
-:::dev "Michael Hicks (mwhicks1)"
-In the Rocq there is the development of a special tactic to make this proof simpler.
-Do we want that here?
-:::
 
 ## Values
 
@@ -571,18 +575,14 @@ theorem step_deterministic : Deterministic Step := by
     intro x y₁ y₂ h₁
     induction h₁ generalizing y₂ with
     | plus n₁ n₂ =>
-        intro h₂; cases h₂ with
+        intro h₂; cases h₂ with try contradiction
         | plus => rfl
-        | plusLeft _ _ _ hs => cases hs
-        | plusRight _ _ _ _ hs => cases hs
     | plusLeft t₁ t₁' t₂ hs ih =>
-        intro h₂; cases h₂ with
-        | plus => cases hs
+        intro h₂; cases h₂ with try contradiction
         | plusLeft _ _ _ hs₂ => rw [ih _ hs₂]
         | plusRight _ _ _ hv hs₂ => cases hv; cases hs
     | plusRight v₁ t₂ t₂' hv hs ih =>
-        intro h₂; cases h₂ with
-        | plus => cases hs
+        intro h₂; cases h₂ with try contradiction
         | plusLeft _ _ _ hs₂ => cases hv; cases hs₂
         | plusRight _ _ _ _ hs₂ => rw [ih _ hs₂]
 ```
@@ -624,7 +624,7 @@ Or, formally:
 ```lean
 theorem strong_progress (t : Tm) : IsValue t ∨ ∃ t', t ⟶ t' := by
   induction t with
-  | c n => left; exact .const n
+  | c n => left; constructor
   | p t₁ t₂ ih₁ ih₂ =>
       right
       cases ih₁ with
@@ -684,20 +684,12 @@ theorem nf_is_value (t : Tm)
     (h : IsNormalForm Step t) : IsValue t := by
   cases strong_progress t with
   | inl hv => exact hv
-  | inr hstep => exact absurd hstep h
+  | inr hstep => contradiction
 
 theorem nf_same_as_value (t : Tm) :
     IsNormalForm Step t ↔ IsValue t := by
   exact ⟨nf_is_value t, value_is_nf t⟩
 ```
-:::dev "Kihong Heo (KihongHeo)"
-Tactic `absurd` is first introduced here. Do we want to explain it?
-:::
-:::dev "Daniel Sainati (dsainati1)"
-I think some of these proofs were originally Claude-generated, so we
-probably want to redo them from scratch, in which case introducing
-absurd is likely not necessary.
-:::
 
 Why is this interesting? Because `IsValue` is a _syntactic_ concept — it is
 defined by looking at the way a term is written — while `IsNormalForm` is a
@@ -839,7 +831,9 @@ theorem value_not_same_as_normal_form :
   apply And.intro (.const 5)
   solution!
     intro h
-    exact h ⟨.p (.c 5) (.c 0), .funny 5⟩
+    apply h
+    exists .p (.c 5) (.c 0)
+    apply Step.funny
 
 end Temp2
 ```
@@ -1125,10 +1119,16 @@ theorem normal_forms_unique :
     | refl a =>
         cases p₂₁ with
         | refl => rfl
-        | step _ b _ h₁ _ => exact absurd ⟨b, h₁⟩ p₁₂
+        | step _ b _ h₁ _ =>
+          exfalso
+          apply p₁₂
+          exists b
     | step a b c h₁ h₂ ih =>
         cases p₂₁ with
-        | refl => exact absurd ⟨b, h₁⟩ p₂₂
+        | refl =>
+          exfalso
+          apply p₂₂
+          exists b
         | step _ b' _ h₁' h₂' =>
             have hbb : b = b' := step_deterministic _ _ _ h₁ h₁'
             subst hbb
