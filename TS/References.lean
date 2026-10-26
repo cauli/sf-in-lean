@@ -644,10 +644,10 @@ inductive Tm.IsValue : Tm → Prop :=
       IsValue (.const n)
   | unit :
       IsValue <{ unit }>
-  | loc : forall (l : Nat),
+  | loc_ : forall (l : Nat),
       IsValue (.loc l)
 
-attribute [StlcRefEval] Tm.IsValue.abs Tm.IsValue.nat Tm.IsValue.unit Tm.IsValue.loc
+attribute [StlcRefEval] Tm.IsValue.abs Tm.IsValue.nat Tm.IsValue.unit Tm.IsValue.loc_
 ```
 Extending substitution to handle the new syntax of terms is
 straightforward: substituting into a pointer leaves it
@@ -1188,6 +1188,24 @@ def List.set : (l : List α) → (n : Nat) → (a : α) → List α
   | nil,       _,          _ => nil
 ```
 
+As might be expected, we will also need some technical
+lemmas; they are straightforward to prove.
+
+```lean
+theorem Store_get_set_eq (ρ : Store) (l : Nat) (x : Tm)
+  (h : l < ρ.length) :
+  (ρ.set l x)[l] = x := by
+  induction ρ generalizing l with
+  | nil => simp_all
+  | cons hd tl ih => cases l <;> simp_all
+
+theorem Store_get_set_neq (l₁ l₂ : Nat) (t : Tm) (ρ : Store) :
+  l₁ ≠ l₂ ->
+  (ρ.set l₂ t)[l₁] = ρ[l₁] := by
+  induction ρ generalizing l₁ l₂ with
+  | nil => simp
+  | cons hd tl ih => cases l₁ <;> cases l₂ <;> simp_all
+```
 ## Reduction
 
 ::::terse
@@ -1429,7 +1447,7 @@ inductive Step : Tm × Store → Tm × Store → Prop where
   | refValue {v : Tm} {ρ : Store}
       (h : v.IsValue) :
       <{ ref v }> / ρ ⟶ Tm.loc ρ.length / ρ.concat v
-  | ref {t₁ t₁' : Tm} {ρ ρ' : Store}
+  | ref_ {t₁ t₁' : Tm} {ρ ρ' : Store}
       (h : t₁ / ρ ⟶ t₁' / ρ') :
       <{ ref t₁ }> / ρ ⟶ <{ ref t₁' }> / ρ'
   | derefLoc {l : Nat} {ρ : Store}
@@ -1462,7 +1480,7 @@ attribute [StlcRefEval] Step.appAbs Step.app₁ Step.app₂
     Step.succ Step.succNat Step.pred Step.predConst
     Step.multConst Step.mult₁ Step.mult₂
     Step.if0Step Step.if0Zero Step.if0Nonzero
-    Step.refValue Step.ref Step.derefLoc Step.deref Step.assign
+    Step.refValue Step.ref_ Step.derefLoc Step.deref Step.assign
     Step.assign₁ Step.assign₂
 ```
 
@@ -1758,10 +1776,10 @@ inductive HasType (δ : StoreTy) : Context → Tm → Ty → Prop where
   | unit {Γ : Context} :
       <{ Γ / δ ⊢ unit ⦂ Unit }>
   -- references
-  | loc {Γ : Context} {l : Nat}
+  | loc_ {Γ : Context} {l : Nat}
       (h : l < δ.length) :
       <{ Γ / δ ⊢ ~(Tm.loc l) ⦂ Ref ~(δ[l]) }>
-  | ref {Γ : Context} {t₁ : Tm} {τ₁ : Ty}
+  | ref_ {Γ : Context} {t₁ : Tm} {τ₁ : Ty}
       (h : <{ Γ / δ ⊢ t₁ ⦂ τ₁ }>) :
       <{ Γ / δ ⊢ ref t₁ ⦂ Ref τ₁ }>
   | deref {Γ : Context} {t₁ : Tm} {τ₁ : Ty}
@@ -1775,7 +1793,7 @@ inductive HasType (δ : StoreTy) : Context → Tm → Ty → Prop where
 attribute [StlcRefTyping] HasType.var HasType.abs HasType.app
     HasType.const HasType.succ HasType.pred HasType.mult
     HasType.ite0 HasType.unit
-    HasType.loc HasType.ref HasType.deref HasType.assign
+    HasType.loc_ HasType.ref_ HasType.deref HasType.assign
 ```
 
 :::details "Notation encoding"
@@ -2152,11 +2170,28 @@ theorem weakening_empty {Γ : Context} {δ : StoreTy} {t : Tm} {τ: Ty}
 ```
 
 ```lean
-theorem substitution_preserves_typing (Γ : Context) (δ : StoreTy) (x : String) (τ₁ : Ty) (t v : Tm) (τ : Ty)
+theorem substitution_preserves_typing (Γ : Context) (δ : StoreTy) (x : String)
+    (τ₁ : Ty) (t v : Tm) (τ : Ty)
     (ht : <{ x ↦ τ₁ ; Γ / δ⊢ t ⦂ τ }>)
     (hv : <{ ∅ / δ ⊢ v ⦂ τ₁ }>) :
     <{ Γ / δ ⊢ [x := v] t ⦂ τ }> := by
-  sorry
+  induction t generalizing Γ τ with (
+    rw [subst]; try (inversion ht; apply_rules using StlcRefTyping; done))
+    | var y =>
+        inversion ht with | _ h =>
+        by_cases h₁ : x = y
+        · subst h₁; simp at h; subst h;
+          apply weakening_empty at hv
+          simp; assumption
+        · rw [PartialMap.update_neq] at h <;> simp_all
+          apply_rules using StlcRefTyping
+    | abs y _ _ ih =>
+        inversion ht with | _ h =>
+        by_cases h₁ : x = y
+        · simp_all [PartialMap.update_shadow]; apply_rules using StlcRefTyping
+        · rw [PartialMap.update_permute] at h
+          · simp_all; apply_rules using StlcRefTyping
+          · lia
 ```
 
 ### Assignment Preserves Store Typing
@@ -2172,7 +2207,16 @@ theorem assign_pres_store_typing {δ : StoreTy} {ρ : Store} {l : Nat} {t : Tm}
   (hStoreTy : δ ⊢ ρ)
   (hTy : <{ ∅ / δ ⊢ t ⦂ ~(δ[l]) }>) :
   δ ⊢ ρ.set l t := by
-    sorry
+    have ⟨h₁, h₂⟩ := hStoreTy
+    constructor
+    · simp_all [List.length_set]
+    · intro l' hLen'
+      by_cases h₁ : l' = l
+      · subst_vars
+        rw [Store_get_set_eq] <;> assumption
+      · rw [Store_get_set_neq] <;> try assumption
+        apply h₂
+        simp_all [List.length_set]
 ```
 
 ### Weakening for Stores
@@ -2187,7 +2231,11 @@ theorem store_weakening {Γ : Context} {δ δ' : StoreTy} {t : Tm} {τ : Ty}
   (hExt : Extends δ' δ)
   (hTy : <{ Γ / δ ⊢ t ⦂ τ }>) :
   <{ Γ / δ' ⊢ t ⦂ τ }> := by
-    sorry
+    induction hTy with (try (apply_rules using StlcRefTyping; done))
+    | loc_ h =>
+        rw [←extends_lookup] <;> try assumption
+        apply HasType.loc_
+        apply length_extends <;> assumption
 ```
 
 We can use the `store_weakening` lemma to prove that if a store is
@@ -2197,10 +2245,25 @@ store typing extended with `τ`'s type.
 
 ```lean
 theorem store_well_typed_app {δ : StoreTy} {ρ : Store} {t₁ : Tm} {τ₁ : Ty}
-  (hStore : δ ⊢ ρ)
+  (hStoreTy : δ ⊢ ρ)
   (hTy : <{ ∅ / δ ⊢ t₁ ⦂ τ₁ }>) :
-  StoreWellTyped (δ.concat τ₁) (ρ.concat t₁) := by
-    sorry
+  (δ.concat τ₁) ⊢ (ρ.concat t₁) := by
+    have ⟨h₁, h₂⟩ := hStoreTy
+    simp_all only [List.concat_eq_append]
+    constructor
+    · simp_all
+    · simp_all only [List.length_append, List.length_cons, List.length_nil, Nat.zero_add]
+      intro l hl
+      inversion hl with
+      | refl =>
+          apply store_weakening <;> try assumption
+          apply extends_app
+          simp_all [MyGetElem.getElem]
+      | step hl =>
+          apply store_weakening <;> try assumption
+          · apply extends_app
+          · have hl' : l < ρ.length := by lia
+            simp_all [MyGetElem.getElem, List.getElem?_append_left]
 ```
 
 ### Preservation!
@@ -2214,7 +2277,142 @@ theorem preservation {δ : StoreTy} {t t' : Tm} {τ : Ty} {ρ ρ' : Store}
   (hStoreTy : δ ⊢ ρ)
   (hEval : t / ρ ⟶ t' / ρ') :
     ∃ δ', Extends δ' δ ∧ (<{ ∅ / δ' ⊢ t' ⦂ τ }>) ∧ (δ' ⊢ ρ') := by
-    sorry
+
+    generalize heq : (∅ : Context) = Γ at hTy
+    -- discharge the goals where `t` doesn't step
+    induction hTy generalizing t' with (subst_vars; try (inversion hEval; done))
+    | app h₁ h₂ ih₁ ih₂ =>
+      inversion hEval with
+      | appAbs =>
+        inversion h₁ with | abs h =>
+        exists δ; constructor
+        apply extends_refl; constructor
+        apply_rules [substitution_preserves_typing, extends_refl] using StlcRefTyping
+        assumption
+      | app₁ hs =>
+        have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih₁ hs rfl
+        exists δ'; constructor
+        assumption; constructor
+        solve_by_elim [store_weakening] using StlcRefTyping
+        assumption
+      | app₂ _ hs =>
+        have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih₂ hs rfl
+        exists δ'; constructor
+        assumption; constructor
+        solve_by_elim [store_weakening] using StlcRefTyping
+        assumption
+    | succ _ ih =>
+      inversion hEval with
+      | succNat =>
+        exists δ; constructor
+        apply extends_refl; constructor
+        constructor
+        assumption
+      | succ hs =>
+        have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih hs rfl
+        exists δ'; constructor
+        assumption; constructor
+        solve_by_elim [store_weakening] using StlcRefTyping
+        assumption
+    | pred _ ih =>
+      inversion hEval with
+      | predConst =>
+        exists δ; constructor
+        apply extends_refl; constructor
+        constructor
+        assumption
+      | pred hs =>
+        have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih hs rfl
+        exists δ'; constructor
+        assumption; constructor
+        solve_by_elim [store_weakening] using StlcRefTyping
+        assumption
+    | mult h₁ h₂ ih₁ ih₂ =>
+      inversion hEval with
+      | multConst =>
+        exists δ; constructor
+        apply extends_refl; constructor
+        constructor
+        assumption
+      | mult₁ hs =>
+        have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih₁ hs rfl
+        exists δ'; constructor
+        assumption; constructor
+        solve_by_elim [store_weakening] using StlcRefTyping
+        assumption
+      | mult₂ _ hs =>
+        have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih₂ hs rfl
+        exists δ'; constructor
+        assumption; constructor
+        solve_by_elim [store_weakening] using StlcRefTyping
+        assumption
+    | ite0 _ h₂ h₃ ih₁ _ _ =>
+      inversion hEval with
+      | if0Step hs =>
+        have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih₁ hs rfl
+        exists δ'; constructor
+        assumption; constructor
+        constructor <;> solve_by_elim [store_weakening] using StlcRefTyping
+        assumption
+      | if0Zero =>
+        exists δ; constructor
+        apply extends_refl; constructor <;> assumption
+      | if0Nonzero =>
+        exists δ; constructor
+        apply extends_refl; constructor <;> assumption
+    | @ref_ _ _ τ₁ h ih =>
+      inversion hEval with
+      | refValue =>
+        exists δ.concat τ₁; constructor
+        · rw [List.concat_eq_append]; apply extends_app
+        · constructor
+          · have h : <{Ref τ₁}> = <{Ref ~((δ.concat τ₁)[ρ.length])}> := by
+              simp_all [StoreWellTyped, MyGetElem.getElem]
+            rw [h]
+            constructor
+            simp; lia
+          · apply store_well_typed_app <;> assumption
+      | ref_ hs =>
+        have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih hs rfl
+        exists δ'; constructor
+        assumption; constructor
+        solve_by_elim [store_weakening] using StlcRefTyping
+        assumption
+    | deref h ih =>
+      inversion hEval with
+      | derefLoc hl =>
+        inversion h
+        exists δ; constructor
+        apply extends_refl; constructor
+        have ⟨h₁, h₂⟩ := hStoreTy
+        apply h₂ <;> assumption
+        assumption
+      | deref hs =>
+        have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih hs rfl
+        exists δ'; constructor
+        assumption; constructor
+        solve_by_elim [store_weakening] using StlcRefTyping
+        assumption
+    | assign h₁ h₂ ih₁ ih₂ =>
+      inversion hEval with
+      | assign _ hl =>
+        inversion h₁
+        exists δ; constructor
+        apply extends_refl; constructor
+        constructor
+        apply assign_pres_store_typing <;> assumption
+      | assign₁ hs =>
+        have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih₁ hs rfl
+        exists δ'; constructor
+        assumption; constructor
+        solve_by_elim [store_weakening] using StlcRefTyping
+        assumption
+      | assign₂ _ hs =>
+        have ⟨δ', hExt, hTy', hStoreTy'⟩ := ih₂ hs rfl
+        exists δ'; constructor
+        assumption; constructor
+        solve_by_elim [store_weakening] using StlcRefTyping
+        assumption
 ```
 
 :::::full
@@ -2335,7 +2533,116 @@ theorem progress (δ : StoreTy) (t : Tm) (τ : Ty) (ρ : Store)
   (hTy : <{ ∅ / δ ⊢ t ⦂ τ }>)
   (hStoreTy : δ ⊢ ρ) :
   (t.IsValue ∨ ∃ t' ρ', t / ρ ⟶ t' / ρ') := by
-    sorry
+    obtain ⟨hLen, _⟩ := hStoreTy
+    generalize heq : (∅ : Context) = Γ at hTy
+    induction hTy with (subst_vars; first
+      | contradiction
+      -- discharge cases where `t` is obviously a value
+      | try (left; constructor; done))
+    | @app _ _ _ t₁ t₂ h₁ _ ih₁ ih₂ =>
+      right; cases ih₁ rfl with
+      -- t₁ is a value
+      | inl hv₁ =>
+        cases ih₂ rfl with
+        -- t₂ is a value
+        | inl hv₂ =>
+          cases hv₁ with (inversion h₁)
+          | abs x _ t₁₂ =>
+            apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+        -- t₂ steps
+        | inr hs₂ =>
+          obtain ⟨t₂', ρ', hs₂⟩ := hs₂
+          apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+      -- t₁ steps
+      | inr hs₁ =>
+        obtain ⟨t₁', ρ', hs₁⟩ := hs₁
+        apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+    | succ h ih =>
+      right; cases ih rfl with
+      -- t₁ is a value
+      | inl hv =>
+        cases hv with (inversion h)
+        | nat n => apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+      -- t₁ steps
+      | inr hs =>
+        obtain ⟨t₁', ρ', hs⟩ := hs
+        apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+    | pred h ih =>
+      right; cases ih rfl with
+      -- t₁ is a value
+      | inl hv =>
+        cases hv with (inversion h)
+        | nat n => apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+      -- t₁ steps
+      | inr hs =>
+        obtain ⟨t₁', ρ', hs⟩ := hs
+        apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+    | @mult _ t₁ t₂ h₁ h₂ ih₁ ih₂ =>
+      right; cases ih₁ rfl with
+      -- t₁ is a value
+      | inl hv₁ =>
+        cases ih₂ rfl with
+        -- t₂ is a value
+        | inl hv₂ =>
+          cases hv₁ with (inversion h₁)
+          | nat n₁ =>
+            cases hv₂ with (inversion h₂)
+            | nat n₂ => apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+        -- t₂ steps
+        | inr hs₂ =>
+          obtain ⟨t₂', ρ', hs₂⟩ := hs₂
+          apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+      -- t₁ steps
+      | inr hs₁ =>
+        obtain ⟨t₁', ρ', hs₁⟩ := hs₁
+        apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+    | @ite0 _ _ t₂ t₃ _ h₁ _ _ ih₁ _ _ =>
+      right; cases ih₁ rfl with
+      -- t₁ is a value
+      | inl hv₁ =>
+        cases hv₁ with (inversion h₁)
+        | nat n =>
+          cases n <;> (apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval)
+      -- t₁ steps
+      | inr hs₁ =>
+        obtain ⟨t₁', ρ', hs₁⟩ := hs₁
+        apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+    | @ref_ _ t₁ _ _ ih =>
+      right; cases ih rfl with
+      -- t₁ is a value
+      | inl hv =>
+        apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+      -- t₁ steps
+      | inr hs =>
+        obtain ⟨t₁', ρ', hs⟩ := hs
+        apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+    | deref h ih =>
+      right; cases ih rfl with
+      -- t₁ is a value; its typing gives `l < δ.length`
+      | inl hv =>
+        cases hv with (inversion h)
+        | loc_ l => exists ρ[l], ρ; apply Step.derefLoc; lia
+      -- t₁ steps
+      | inr hs =>
+        obtain ⟨t₁', ρ', hs⟩ := hs
+        apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+    | @assign _ t₁ t₂ _ h₁ _ ih₁ ih₂ =>
+      right; cases ih₁ rfl with
+      -- t₁ is a value
+      | inl hv₁ =>
+        cases ih₂ rfl with
+        -- t₂ is a value
+        | inl hv₂ =>
+          cases hv₁ with (inversion h₁)
+          | loc_ l => exists <{ unit }>, ρ.set l t₂; apply Step.assign hv₂; lia
+        -- t₂ steps
+        | inr hs₂ =>
+          obtain ⟨t₂', ρ', hs₂⟩ := hs₂
+          apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
+      -- t₁ steps
+      | inr hs₁ =>
+        obtain ⟨t₁', ρ', hs₁⟩ := hs₁
+        apply Exists.intro; apply Exists.intro; solve_by_elim using StlcRefEval
 ```
 
 # References and Nontermination
@@ -2387,7 +2694,9 @@ def loop :=
 This term is well typed:
 
 ```lean
-theorem loop_typeable : ∃ τ, <{ ∅ / [] ⊢ loop ⦂ τ }> := by sorry
+theorem loop_typeable : ∃ τ, <{ ∅ / [] ⊢ loop ⦂ τ }> := by
+  apply Exists.intro
+  apply_rules using StlcRefTyping
 ```
 
 To show formally that the term diverges, we first define the
@@ -2399,8 +2708,8 @@ that it is not reflexive: `t ⟶+ t'` means that `τ` can reach
 
 ```lean
 inductive StepClosure {X:Type} (R: Relation X) : X → X → Prop :=
-  | one (x y z : X) (h₁ : R x y) : StepClosure R x y
-  | step (x y z : X) (h₁ : R x y) (h₂ : StepClosure R y z) : StepClosure R x z
+  | one {x y : X} (h₁ : R x y) : StepClosure R x y
+  | step {x y z : X} (h₁ : R x y) (h₂ : StepClosure R y z) : StepClosure R x z
 
 scoped notation:40
   t:71 " / " ρ:41 " ⟶+ " t':71 " / " ρ':41 =>
@@ -2424,11 +2733,10 @@ syntax "reduce" " using " ident,+ : tactic
 macro_rules
   | `(tactic| reduce using $xs,*) =>
     `(tactic|
-      first
-      | apply Multi.refl
-      | (apply Multi.step
-         · solve_by_elim (maxDepth := 15) (constructor := false) only using $xs,*
-         · reduce using $xs,*))
+      repeat
+        (apply Multi.step
+         · solve_by_elim (maxDepth := 15) (constructor := false) [Nat.le.refl, Nat.le.step] using $xs,*
+         try apply Multi.refl))
 ```
 
 Next, we use {tactic}`reduce` to show that {lean}`loop` steps to
@@ -2437,7 +2745,7 @@ Next, we use {tactic}`reduce` to show that {lean}`loop` steps to
 ```lean
 theorem loop_steps_to_loop_fun :
   loop / [] ⟶*  <{ (! (loc 0)) unit }> / [<{ [R := loc 0] loop_fun }>] := by
-    sorry
+    reduce using StlcRefEval
 ```
 
 Finally, we show that the latter expression reduces in
@@ -2446,7 +2754,9 @@ two steps to itself!
 ```lean
 theorem loop_fun_step_self :
   <{ (! (loc 0)) unit }> / [<{ [R := loc 0] loop_fun }>] ⟶+
-  <{ (! (loc 0)) unit }> / [<{ [R := loc 0] loop_fun }>] := by sorry
+  <{ (! (loc 0)) unit }> / [<{ [R := loc 0] loop_fun }>] := by
+    apply StepClosure.step; solve_by_elim using StlcRefEval
+    apply StepClosure.one; solve_by_elim using StlcRefEval
 ```
 
 :::::full
@@ -2464,7 +2774,9 @@ def factorial : Tm :=
             (R := (λX : Nat. if0 X then 1 else (X * ( (!R) (pred X) ) ))); !R  )
       (ref (λX : Nat. X)) }>)
 
-theorem factorial_type : <{ ∅ / [] ⊢ factorial ⦂ (Nat → Nat) }> := by sorry
+theorem factorial_type : <{ ∅ / [] ⊢ factorial ⦂ (Nat → Nat) }> := by
+  solution!
+    apply_rules using StlcRefTyping
 ```
 
 :::autogradedHole factorial
@@ -2480,7 +2792,8 @@ automatic using the `reduce` tactic, once the witness is supplied.
 ```lean
 theorem factorial_4 : ∃ (ρ : Store), <{ factorial 4 }> / [] ⟶* .const 24 / ρ := by
   solution!
-    sorry
+    exists [<{ λX : Nat. if0 X then 1 else (X * ((!(loc 0)) (pred X))) }>]
+    reduce using StlcRefEval
 ```
 ::::
 :::::
