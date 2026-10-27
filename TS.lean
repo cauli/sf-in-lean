@@ -10,6 +10,7 @@ import TS.Stlc
 import TS.StlcProp
 import TS.MoreStlc
 import TS.Sub
+import TS.References
 
 import VersoManual
 
@@ -24,3 +25,4 @@ open Verso Genre Manual
 {include TS.StlcProp}
 {include TS.MoreStlc}
 {include TS.Sub}
+{include TS.References}
