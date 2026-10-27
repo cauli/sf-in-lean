@@ -1,0 +1,454 @@
+--- TS/References.lean (before this round)
++++ TS/References.lean
+@@ -457,5 +457,4 @@
+       `(<{ $t₁':stlcTm ; $t₂':stlcTm }>)
+   | _ => throw ()
+-
+ 
+ @[app_unexpander Tm.ite0]
+@@ -468,5 +467,4 @@
+   | _ => throw ()
+ 
+-
+ @[app_unexpander Tm.unit]
+ private def Tm.unexpandUnit : Unexpander
+@@ -503,5 +501,4 @@
+   | _ => throw ()
+ 
+-
+ end Delab
+ ```
+@@ -534,5 +531,5 @@
+ #check (Tm.const 0 : Tm)
+ 
+-example (x : Tm) : (<{ x }> : Tm) = x := rfl
++example (x : Tm) : (<{ x }> : Tm) = x := by rfl
+ 
+ /-- info: <{ λ X : Nat . X }> : Tm -/
+@@ -607,17 +604,17 @@
+ assignment look roughly like this:
+ 
+-```display
+-                           Γ ⊢ t₁ ⦂ τ₁
+-                       --------------------                   (ref)
+-                       Γ ⊢ ref t₁ ⦂ Ref τ₁
++```display +centered
++      Γ ⊢ t₁ ⦂ τ₁
++---------------------  (ref)
++  Γ ⊢ ref t₁ ⦂ Ref τ₁
+ 
+-                        Γ ⊢ t₁ ⦂ Ref τ₁
+-                        -------------------                   (deref)
+-                          Γ ⊢ !t₁ ⦂ τ₁
++      Γ ⊢ t₁ ⦂ Ref τ₁
++---------------------  (deref)
++     Γ ⊢ !t₁ ⦂ τ₁
+ 
+-                        Γ ⊢ t₁ ⦂ Ref τ₂
+-                          Γ ⊢ t₂ ⦂ τ₂
+-                       --------------------                  (assign)
+-                       Γ ⊢ t₁ := t₂ : Unit
++      Γ ⊢ t₁ ⦂ Ref τ₂
++      Γ ⊢ t₂ ⦂ τ₂
++---------------------  (assign)
++Γ ⊢ t₁ := t₂ : Unit
+ ```
+ 
+@@ -696,5 +693,4 @@
+ :::
+ 
+-
+ # Pragmatics
+ 
+@@ -823,5 +819,5 @@
+ `Decc` are not providing any useful information to the bodies of
+ these functions (using the wildcard `_` as the name of the bound
+-variable is a reminder of this).  Instead, their purpose of these
++variable is a reminder of this).  Instead, the purpose of these
+ abstractions is to "slow down" the execution of the function
+ bodies.  Since function abstractions are values, the two `let`s are
+@@ -871,5 +867,4 @@
+ ```
+ 
+-
+ :::::full
+ ::::exercise (rating := 1) (name := "store_draw") (manual := true)
+@@ -988,5 +983,5 @@
+ 
+ ::::terse
+-TERSE: One more difference between our references and C-style
++One more difference between our references and C-style
+ mutable variables: _null pointers_.
+ 
+@@ -1013,5 +1008,5 @@
+ primitives for freeing reference cells when they are no longer needed.
+ Instead, like many modern languages (including OCaml, Haskell, Java,
+-etc.) we rely on the run-time system to perform _garbage collection_,
++etc.), we rely on the run-time system to perform _garbage collection_,
+ automatically identifying and reusing cells that can no longer be
+ reached by the program.
+@@ -1115,5 +1110,5 @@
+   - Concretely: An array of 8-bit bytes, indexed by 32-bit integers.
+ 
+-  - More abstractly: a list or array, of values
++  - More abstractly: a list or array of values
+ 
+   - Even more abstractly: a partial function from locations to values.
+@@ -1150,5 +1145,5 @@
+ A store is just a _list_ of values.  (This more concrete
+ representation will be more convenient for proofs than the
+-functional representation we used in Imp.) We will use the greek letter ρ
++functional representation we used in Imp.) We will use the Greek letter ρ
+ to represent stores.
+ ::::
+@@ -1164,5 +1159,4 @@
+ that we don't will require a bit of work.)
+ 
+-
+ ```lean
+ open scoped MyGetElem
+@@ -1211,47 +1205,48 @@
+ ::::terse
+ First, we augment existing reduction rules with stores:
+-```display
+-                              v₂.IsValue
+-                -------------------------------------               (appAbs)
+-                (λx:τ₂. t₁) v₂ / ρ ⟶ [x:=v₂] t₁ / ρ
++```display +centered
++            v₂.IsValue
++-----------------------------------  (appAbs)
++(λx:τ₂. t₁) v₂ / ρ ⟶ [x:=v₂] t₁ / ρ
+ 
+-                        t₁ / ρ ⟶ t₁' / ρ'
+-                     ---------------------------                      (app₁)
+-                     t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'
++            t₁ / ρ ⟶ t₁' / ρ'
++--------------------------------     (app₁)
++         t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'
+ 
+-                  v₁.IsValue     t₂ / ρ ⟶ t₂' / ρ'
+-                  ----------------------------------                  (app₂)
+-                     v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'
++           v₁.IsValue
++            t₂ / ρ ⟶ t₂' / ρ'
++--------------------------------     (app₂)
++         v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'
+ ```
+ 
+ Now we can give the rules for the new constructs:
+ 
+-```display
+-                   ------------------------------                  (refValue)
+-                   ref v / ρ ⟶ loc ρ.length / ρ,v
++```display +centered
++-----------------------------------     (refValue)
++     ref v / ρ ⟶ loc ρ.length / ρ,v
+ 
+-                        t₁ / ρ ⟶ t₁' / ρ'
+-                    -----------------------------                    (ref)
+-                    ref t₁ / ρ ⟶ ref t₁' / ρ'
++        t₁ / ρ ⟶ t₁' / ρ'
++-----------------------------           (ref)
++    ref t₁ / ρ ⟶ ref t₁' / ρ'
+ 
+-                               l < ρ.length
+-                     ----------------------------------            (derefLoc)
+-                     !(loc l) / ρ ⟶ ρ[l] / ρ
++      l < ρ.length
++-------------------------               (derefLoc)
++  !(loc l) / ρ ⟶ ρ[l] / ρ
+ 
+-                        t₁ / ρ ⟶ t₁' / ρ'
+-                       -----------------------                       (deref)
+-                       !t₁ / ρ ⟶ !t₁' / ρ'
++        t₁ / ρ ⟶ t₁' / ρ'
++--------------------------              (deref)
++       !t₁ / ρ ⟶ !t₁' / ρ'
+ 
+-                               l < ρ.length
+-                ------------------------------------------         (assign)
+-                loc l := v / ρ ⟶ unit / List.set ρ l v
++             l < ρ.length
++--------------------------------------  (assign)
++loc l := v / ρ ⟶ unit / List.set ρ l v
+ 
+-                        t₁ / ρ ⟶ t₁' / ρ'
+-                 -----------------------------------               (assign₁)
+-                 t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'
++        t₁ / ρ ⟶ t₁' / ρ'
++-------------------------------         (assign₁)
++  t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'
+ 
+-                        t₂ / ρ ⟶ t₂' / ρ'
+-                 -----------------------------------               (assign₂)
+-                 v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'
++        t₂ / ρ ⟶ t₂' / ρ'
++-------------------------------         (assign₂)
++  v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'
+ ```
+ ::::
+@@ -1267,5 +1262,5 @@
+ to return a new store.  Thus, the shape of the single-step
+ reduction relation needs to change from `t ⟶ t'` to `t / ρ ⟶ t' / ρ'`,
+-where `ρ` and `ρ` are the starting and ending states of
++where `ρ` and `ρ'` are the starting and ending states of
+ the store.
+ 
+@@ -1273,16 +1268,17 @@
+ existing reduction rules with stores:
+ 
+-```display
+-                               value v₂
+-                ------------------------------------- (appAbs)
+-                (λx:τ₂,t₁) v₂ / ρ ⟶ [x:=v₂]t₁ / ρ
++```display +centered
++            value v₂
++---------------------------------  (appAbs)
++(λx:τ₂,t₁) v₂ / ρ ⟶ [x:=v₂]t₁ / ρ
+ 
+-                        t₁ / ρ ⟶ t₁' / ρ'
+-                     --------------------------- (app₁)
+-                     t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'
++           t₁ / ρ ⟶ t₁' / ρ'
++-------------------------------    (app₁)
++        t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'
+ 
+-                  value v₁     t₂ / ρ ⟶ t₂' / ρ'
+-                  ---------------------------------- (app₂)
+-                     v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'
++           value v₁
++           t₂ / ρ ⟶ t₂' / ρ'
++-------------------------------    (app₂)
++        v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'
+ ```
+ 
+@@ -1309,8 +1305,8 @@
+ reduce `t₁` until it becomes a value:
+ 
+-```display
+-                        t₁ / ρ ⟶ t₁' / ρ'
+-                       --------------------- (deref)
+-                       !t₁ / ρ ⟶ !t₁' / ρ'
++```display +centered
++ t₁ / ρ ⟶ t₁' / ρ'
++-------------------  (deref)
++!t₁ / ρ ⟶ !t₁' / ρ'
+ ```
+ Once `t₁` has finished reducing, we should have an expression of
+@@ -1323,8 +1319,8 @@
+ that well-typed terms will never misbehave in this way.)
+ 
+-```display
+-                               l < ρ.length
+-                     ---------------------------------- (derefLoc)
+-                     !(loc l) / ρ ⟶ ρ[l] / ρ
++```display +centered
++     l < ρ.length
++-----------------------  (derefLoc)
++!(loc l) / ρ ⟶ ρ[l] / ρ
+ ```
+ 
+@@ -1333,12 +1329,12 @@
+ reduce `t₂` until it becomes a value (of any sort):
+ 
+-```display
+-                        t₁ / ρ ⟶ t₁' / ρ'
+-                 ----------------------------------- (assign₁)
+-                 t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'
++```display +centered
++      t₁ / ρ ⟶ t₁' / ρ'
++-----------------------------  (assign₁)
++t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'
+ 
+-                        t₂ / ρ ⟶ t₂' / ρ'
+-                  --------------------------------- (assign₂)
+-                  v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'
++      t₂ / ρ ⟶ t₂' / ρ'
++-----------------------------  (assign₂)
++v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'
+ ```
+ 
+@@ -1347,8 +1343,8 @@
+ location `l` contain `v`:
+ 
+-```display
+-                               l < ρ.length
+-                -----------------------------------   (assign)
+-                loc l := v / ρ ⟶ unit / [l:=v]ρ
++```display +centered
++         l < ρ.length
++-------------------------------  (assign)
++loc l := v / ρ ⟶ unit / [l:=v]ρ
+ ```
+ 
+@@ -1358,11 +1354,11 @@
+ the interesting result is the updated store.
+ 
+-Finally, to reduct an expression of the form `ref t₁`, we first
++Finally, to reduce an expression of the form `ref t₁`, we first
+ reduce `t₁` until it becomes a value:
+ 
+-```display
+-                        t₁ / ρ ⟶ t₁' / ρ'
+-                    --------------------------- (ref)
+-                    ref t₁ / ρ ⟶ ref t₁' / ρ'
++```display +centered
++    t₁ / ρ ⟶ t₁' / ρ'
++-------------------------  (ref)
++ref t₁ / ρ ⟶ ref t₁' / ρ'
+ ```
+ 
+@@ -1371,7 +1367,7 @@
+ a new store that extends `ρ` with the new value `v`.
+ 
+-```display
+-          -------------------------------- (refValue)
+-          ref v / ρ ⟶ loc ρ.length / ρ, v
++```display +centered
++-------------------------------  (refValue)
++ref v / ρ ⟶ loc ρ.length / ρ, v
+ ```
+ 
+@@ -1531,11 +1527,11 @@
+ 
+ ::::terse
+-As a first try, observe that the type of a location is  connected to the contents of the store `ρ`.
++As a first try, observe that the type of a location is connected to the contents of the store `ρ`.
+ ::::
+ 
+-```display
+-         Γ ⊢ ρ[l] : τ₁
+-      -------------------
+-      Γ ⊢ loc l : Ref τ₁
++```display +centered
++ Γ ⊢ ρ[l] : τ₁
++------------------
++Γ ⊢ loc l : Ref τ₁
+ ```
+ 
+@@ -1562,8 +1558,8 @@
+ ::::
+ 
+-```display
+-                     Γ; ρ ⊢ ρ[l] : τ₁
+-                ------------------------------
+-                    Γ; ρ ⊢ loc l : Ref τ₁
++```display +centered
++ Γ; ρ ⊢ ρ[l] : τ₁
++---------------------
++Γ; ρ ⊢ loc l : Ref τ₁
+ ```
+ 
+@@ -1596,5 +1592,5 @@
+ 
+ ::::terse
+-For example, what is the type of location `0` in the  following store?
++For example, what is the type of location `0` in the following store?
+ ::::
+ 
+@@ -1701,9 +1697,8 @@
+ ::::
+ 
+-
+-```display
+-        l < δ.length
+-  --------------------------
+-  Γ; δ ⊢ loc l : Ref δ[l]
++```display +centered
++     l < δ.length
++-----------------------
++Γ; δ ⊢ loc l : Ref δ[l]
+ ```
+ 
+@@ -1722,22 +1717,21 @@
+ ::::
+ 
++```display +centered
++     l < δ.length
++-----------------------  (loc)
++Γ; δ ⊢ loc l : Ref δ[l]
+ 
+-```display
+-                          l < δ.length
+-                    ---------------------------             (loc)
+-                    Γ; δ ⊢ loc l : Ref δ[l]
++    Γ; δ ⊢ t₁ : τ₁
++----------------------   (ref)
++Γ; δ ⊢ ref t₁ : Ref τ₁
+ 
+-                         Γ; δ ⊢ t₁ : τ₁
+-                     ---------------------------            (ref)
+-                     Γ; δ ⊢ ref t₁ : Ref τ₁
+-
+-                      Γ; δ ⊢ t₁ : Ref τ₁
+-                      -------------------------             (deref)
+-                        Γ; δ ⊢ !t₁ : τ₁
++  Γ; δ ⊢ t₁ : Ref τ₁
++  ------------------     (deref)
++  Γ; δ ⊢ !t₁ : τ₁
+ 
+-                      Γ; δ ⊢ t₁ : Ref τ₂
+-                        Γ; δ ⊢ t₂ : τ₂
+-                    -----------------------------           (assign)
+-                    Γ; δ ⊢ t₁ := t₂ : Unit
++  Γ; δ ⊢ t₁ : Ref τ₂
++    Γ; δ ⊢ t₂ : τ₂
++----------------------   (assign)
++Γ; δ ⊢ t₁ := t₂ : Unit
+ ```
+ 
+@@ -1890,5 +1884,5 @@
+ ::::terse
+ The evaluation and typing relations take more parameters
+-now, so at a minumum we have to add these to the statement of
++now, so at a minimum we have to add these to the statement of
+ preservation...
+ ::::
+@@ -1906,5 +1900,5 @@
+ respect to a store that violates these assumptions, the result
+ will be disaster.  We say that a store `ρ` is _well typed_ with
+-respect a store typing `δ` if the term at each location `l` in
++respect to a store typing `δ` if the term at each location `l` in
+ `ρ` has the type at location `l` in `δ`.  Since only closed
+ terms ever get stored in locations (why?), it suffices to type
+@@ -1954,5 +1948,5 @@
+   δ₂  =  `Unit → (Unit→Unit)`.
+ In fact, it is well typed with respect to any store typing of the form
+-  δ   =  `Uniτ → τ`
++  δ   =  `Unit → τ`
+ for any type `τ`.
+ :::
+@@ -2005,7 +1999,7 @@
+ ::::terse
+ The `refValue` rule is the problem
+-```display
+-    -------------------------------- (refValue)
+-        ref v / ρ ⟶ loc |ρ| / ρ,v
++```display +centered
++-------------------------  (refValue)
++ref v / ρ ⟶ loc |ρ| / ρ,v
+ ```
+ 
+@@ -2649,5 +2643,5 @@
+ 
+ An important fact about the STLC
+-is that it is is _normalizing_ - that is, every well-typed term
++is that it is _normalizing_ -- that is, every well-typed term
+ can be reduced to a value in a finite number of steps.
+ 
+@@ -2665,13 +2659,12 @@
+    (λR: Ref (Unit → Unit),
+         R := (λx:Unit,(!R) unit); (!R) unit)
+-   (ref (λX:Unit.unit))
++(ref (λX:Unit.unit))
+ ```
+ 
+-
+ ::::full
+ First, `ref (λX:Unit.unit)` creates a reference to a cell of
+ type `Unit → Unit`.  We then pass this reference as the argument
+ to a function which binds it to the name `R`, and assigns to it
+-the function `λX:Unit.(!R) unit` - that is, the function which
++the function `λX:Unit.(!R) unit` -- that is, the function which
+ ignores its argument and calls the function stored in `R` on the
+ argument `unit`; but of course, that function is itself!  To start

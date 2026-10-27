@@ -22,7 +22,7 @@ it!
 ::::
 
 ::::dev PotentialImprovement
-The text in this chapter -- especially the terse version --
+The text in this chapter — especially the terse version —
 does not do a great job, early on, of connecting the concepts to
 things that students will already know about. This makes the later
 parts unnecessarily puzzling.  (Also, the terse slides have way too
@@ -54,7 +54,7 @@ Up to this point, we have considered a variety of _pure_
 language features, including functional abstraction, basic types
 such as numbers and booleans, and structured types such as records
 and variants.  These features form the backbone of most
-programming languages -- including purely functional languages
+programming languages — including purely functional languages
 such as Haskell and "mostly functional" languages such as ML, as
 well as imperative languages such as C and object-oriented
 languages such as Java, C#, and Scala.
@@ -71,8 +71,8 @@ and communication; and so on.  In the literature on programming
 languages, such "side effects" of computation are collectively
 referred to as _computational effects_.
 
-In this chapter, we'll see how one sort of computational effect --
-mutable references -- can be added to the calculi we have studied.
+In this chapter, we'll see how one sort of computational effect —
+mutable references — can be added to the calculi we have studied.
 The main extension will be dealing explicitly with a _store_ (or
 _heap_) and _pointers_ that name store locations.  This extension
 is fairly straightforward to define; the most interesting part is
@@ -98,7 +98,7 @@ Pretty much every programming language provides some form of
 assignment operation that changes the contents of a previously
 allocated piece of storage.  (Lean is a rare exception!)
 
-In some languages -- notably ML and its relatives -- the
+In some languages — notably ML and its relatives — the
 mechanisms for name binding and those for assignment are kept
 separate.  We can have a variable `x` whose _value_ is the number
 `5`, or we can have a variable `y` whose value is a
@@ -111,8 +111,8 @@ directly as an argument to an operation like `+`.  Instead, we
 must explicitly _dereference_ it, writing `!y` to obtain its
 current contents.
 
-In most other languages -- in particular, in all members of the C
-family, including Java -- _every_ variable name refers to a
+In most other languages — in particular, in all members of the C
+family, including Java — _every_ variable name refers to a
 mutable cell, and the operation of dereferencing a variable to
 obtain its current contents is implicit.
 
@@ -457,7 +457,6 @@ private def Tm.unexpandTseq : Unexpander
       `(<{ $t₁':stlcTm ; $t₂':stlcTm }>)
   | _ => throw ()
 
-
 @[app_unexpander Tm.ite0]
 private def Tm.unexpandIte0 : Unexpander
   | `($_ $c $t $e) => do
@@ -466,7 +465,6 @@ private def Tm.unexpandIte0 : Unexpander
       let e' := getTm e
       `(<{ if0 $c':stlcTm then $t':stlcTm else $e':stlcTm }>)
   | _ => throw ()
-
 
 @[app_unexpander Tm.unit]
 private def Tm.unexpandUnit : Unexpander
@@ -502,7 +500,6 @@ private def Tm.unexpandLoc : Unexpander
   | `($_ $n:num) => `(<{ loc $n:num }>)
   | _ => throw ()
 
-
 end Delab
 ```
 ::::
@@ -533,7 +530,7 @@ end Delab
 #guard_msgs in
 #check (Tm.const 0 : Tm)
 
-example (x : Tm) : (<{ x }> : Tm) = x := rfl
+example (x : Tm) : (<{ x }> : Tm) = x := by rfl
 
 /-- info: <{ λ X : Nat . X }> : Tm -/
 #guard_msgs in
@@ -606,19 +603,19 @@ interactions between those features and references.)
 Informally, the typing rules for allocation, dereferencing, and
 assignment look roughly like this:
 
-```display
-                           Γ ⊢ t₁ ⦂ τ₁
-                       --------------------                   (ref)
-                       Γ ⊢ ref t₁ ⦂ Ref τ₁
+```display +centered
+      Γ ⊢ t₁ ⦂ τ₁
+---------------------  (ref)
+  Γ ⊢ ref t₁ ⦂ Ref τ₁
 
-                        Γ ⊢ t₁ ⦂ Ref τ₁
-                        -------------------                   (deref)
-                          Γ ⊢ !t₁ ⦂ τ₁
+      Γ ⊢ t₁ ⦂ Ref τ₁
+---------------------  (deref)
+     Γ ⊢ !t₁ ⦂ τ₁
 
-                        Γ ⊢ t₁ ⦂ Ref τ₂
-                          Γ ⊢ t₂ ⦂ τ₂
-                       --------------------                  (assign)
-                       Γ ⊢ t₁ := t₂ : Unit
+      Γ ⊢ t₁ ⦂ Ref τ₂
+      Γ ⊢ t₂ ⦂ τ₂
+---------------------  (assign)
+Γ ⊢ t₁ := t₂ ⦂ Unit
 ```
 
 The rule for locations will require a bit more machinery, and this
@@ -630,7 +627,7 @@ this later.
 Besides abstractions, numbers, and the unit value, we have one new
 type of value: locations.
 
-A location is a concrete pointer value -- think of it like an address
+A location is a concrete pointer value — think of it like an address
 in memory. Locations should never be written directly by programmers;
 they are used to keep track of the intermediate states of programs
 involving references. In particular, the result of a `ref` expression
@@ -694,7 +691,6 @@ open Lean PrettyPrinter in
 def unexpandSubst : Unexpander := StlcCommon.Delab.unexpandSubst
 ```
 :::
-
 
 # Pragmatics
 
@@ -768,7 +764,7 @@ not the contents of the cell itself.
 
 For example, after reducing
 
-``` display
+```display
 let R = ref 5 in
 let S = R in
 S := 82;
@@ -806,7 +802,7 @@ R := 5; R := !S
 
 Of course, aliasing is also a large part of what makes references
 useful.  In particular, it allows us to set up "implicit
-communication channels" -- shared state -- between different parts
+communication channels" — shared state — between different parts
 of a program.  For example, suppose we define a reference cell and
 two functions that manipulate its contents:
 
@@ -822,7 +818,7 @@ Note that, since their argument types are `Unit`, the
 arguments to the abstractions in the definitions of `Incc` and
 `Decc` are not providing any useful information to the bodies of
 these functions (using the wildcard `_` as the name of the bound
-variable is a reminder of this).  Instead, their purpose of these
+variable is a reminder of this).  Instead, the purpose of these
 abstractions is to "slow down" the execution of the function
 bodies.  Since function abstractions are values, the two `let`s are
 executed simply by binding these functions to the names `Incc` and
@@ -869,7 +865,6 @@ let R₁ = C₁.i unit in
 let R₂ = C₂.i unit in
 R₂  // yields 1, not 2!
 ```
-
 
 :::::full
 ::::exercise (rating := 1) (name := "store_draw") (manual := true)
@@ -987,7 +982,7 @@ type `Option (Ref τ)`.
 ::::
 
 ::::terse
-TERSE: One more difference between our references and C-style
+One more difference between our references and C-style
 mutable variables: _null pointers_.
 
 - In C, a pointer variable can contain either a valid pointer
@@ -1012,7 +1007,7 @@ A last issue that we should mention before we move on with formalizing
 references is storage _de_-allocation.  We have not provided any
 primitives for freeing reference cells when they are no longer needed.
 Instead, like many modern languages (including OCaml, Haskell, Java,
-etc.) we rely on the run-time system to perform _garbage collection_,
+etc.), we rely on the run-time system to perform _garbage collection_,
 automatically identifying and reusing cells that can no longer be
 reached by the program.
 
@@ -1024,7 +1019,7 @@ One reason for this is the familiar _dangling reference_ problem:
 we allocate a cell holding a number, save a reference to it in
 some data structure, use it for a while, then deallocate it and
 allocate a new cell holding a boolean, possibly reusing the same
-storage.  Now we can have two names for the same storage cell --
+storage.  Now we can have two names for the same storage cell —
 one with type `Ref Nat` and the other with type `Ref Bool`.
 
 :::::full
@@ -1071,7 +1066,7 @@ appears when we consider how to formalize their operational
 behavior.  One way to see why is to ask, "What should be the
 _values_ of type `Ref τ`?"  The crucial observation that we need
 to take into account is that reducing a `ref` operator should
-_do_ something -- namely, allocate some storage -- and the result
+_do_ something — namely, allocate some storage — and the result
 of the operation should be a reference to this storage.
 
 What, then, is a reference?
@@ -1092,7 +1087,7 @@ array of bytes, abstracting away from the different sizes of the
 run-time representations of different values.  A reference, then,
 is simply an index into the store.  (If we like, we can even
 abstract away from the fact that these indices are numbers, but
-for purposes of formalization in Rocq it is convenient to use
+for purposes of formalization in Lean it is convenient to use
 numbers.)  We use the word _location_ instead of _reference_ or
 _pointer_ to emphasize this abstract quality.
 
@@ -1114,7 +1109,7 @@ What is the store?
 
   - Concretely: An array of 8-bit bytes, indexed by 32-bit integers.
 
-  - More abstractly: a list or array, of values
+  - More abstractly: a list or array of values
 
   - Even more abstractly: a partial function from locations to values.
 
@@ -1149,7 +1144,7 @@ the store.)
 ::::terse
 A store is just a _list_ of values.  (This more concrete
 representation will be more convenient for proofs than the
-functional representation we used in Imp.) We will use the greek letter ρ
+functional representation we used in Imp.) We will use the Greek letter ρ
 to represent stores.
 ::::
 
@@ -1162,7 +1157,6 @@ cell at location `n` in the store `ρ`.  Note that we must give a
 default value to `nth` in case we try looking up an index which is
 too large. (In fact, we never actually do this, but _proving_
 that we don't will require a bit of work.)
-
 
 ```lean
 open scoped MyGetElem
@@ -1210,49 +1204,50 @@ theorem Store_get_set_neq (l₁ l₂ : Nat) (t : Tm) (ρ : Store) :
 
 ::::terse
 First, we augment existing reduction rules with stores:
-```display
-                              v₂.IsValue
-                -------------------------------------               (appAbs)
-                (λx:τ₂. t₁) v₂ / ρ ⟶ [x:=v₂] t₁ / ρ
+```display +centered
+            v₂.IsValue
+------------------------------------ (appAbs)
+(λx:τ₂. t₁) v₂ / ρ ⟶ [x:=v₂] t₁ / ρ
 
-                        t₁ / ρ ⟶ t₁' / ρ'
-                     ---------------------------                      (app₁)
-                     t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'
+            t₁ / ρ ⟶ t₁' / ρ'
+---------------------------------    (app₁)
+         t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'
 
-                  v₁.IsValue     t₂ / ρ ⟶ t₂' / ρ'
-                  ----------------------------------                  (app₂)
-                     v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'
+           v₁.IsValue
+            t₂ / ρ ⟶ t₂' / ρ'
+---------------------------------    (app₂)
+         v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'
 ```
 
 Now we can give the rules for the new constructs:
 
-```display
-                   ------------------------------                  (refValue)
-                   ref v / ρ ⟶ loc ρ.length / ρ,v
+```display +centered
+------------------------------------    (refValue)
+     ref v / ρ ⟶ loc ρ.length / ρ,v
 
-                        t₁ / ρ ⟶ t₁' / ρ'
-                    -----------------------------                    (ref)
-                    ref t₁ / ρ ⟶ ref t₁' / ρ'
+        t₁ / ρ ⟶ t₁' / ρ'
+------------------------------          (ref)
+    ref t₁ / ρ ⟶ ref t₁' / ρ'
 
-                               l < ρ.length
-                     ----------------------------------            (derefLoc)
-                     !(loc l) / ρ ⟶ ρ[l] / ρ
+      l < ρ.length
+--------------------------              (derefLoc)
+  !(loc l) / ρ ⟶ ρ[l] / ρ
 
-                        t₁ / ρ ⟶ t₁' / ρ'
-                       -----------------------                       (deref)
-                       !t₁ / ρ ⟶ !t₁' / ρ'
+        t₁ / ρ ⟶ t₁' / ρ'
+---------------------------             (deref)
+       !t₁ / ρ ⟶ !t₁' / ρ'
 
-                               l < ρ.length
-                ------------------------------------------         (assign)
-                loc l := v / ρ ⟶ unit / List.set ρ l v
+             l < ρ.length
+--------------------------------------- (assign)
+loc l := v / ρ ⟶ unit / List.set ρ l v
 
-                        t₁ / ρ ⟶ t₁' / ρ'
-                 -----------------------------------               (assign₁)
-                 t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'
+        t₁ / ρ ⟶ t₁' / ρ'
+--------------------------------        (assign₁)
+  t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'
 
-                        t₂ / ρ ⟶ t₂' / ρ'
-                 -----------------------------------               (assign₂)
-                 v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'
+        t₂ / ρ ⟶ t₂' / ρ'
+--------------------------------        (assign₂)
+  v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'
 ```
 ::::
 
@@ -1266,24 +1261,25 @@ term can cause side effects on the store, and these may affect the
 reduction of other terms in the future, the reduction rules need
 to return a new store.  Thus, the shape of the single-step
 reduction relation needs to change from `t ⟶ t'` to `t / ρ ⟶ t' / ρ'`,
-where `ρ` and `ρ` are the starting and ending states of
+where `ρ` and `ρ'` are the starting and ending states of
 the store.
 
 To carry through this change, we first need to augment all of our
 existing reduction rules with stores:
 
-```display
-                               value v₂
-                ------------------------------------- (appAbs)
-                (λx:τ₂,t₁) v₂ / ρ ⟶ [x:=v₂]t₁ / ρ
+```display +centered
+            value v₂
+---------------------------------- (appAbs)
+(λx:τ₂,t₁) v₂ / ρ ⟶ [x:=v₂]t₁ / ρ
 
-                        t₁ / ρ ⟶ t₁' / ρ'
-                     --------------------------- (app₁)
-                     t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'
+           t₁ / ρ ⟶ t₁' / ρ'
+--------------------------------   (app₁)
+        t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'
 
-                  value v₁     t₂ / ρ ⟶ t₂' / ρ'
-                  ---------------------------------- (app₂)
-                     v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'
+           value v₁
+           t₂ / ρ ⟶ t₂' / ρ'
+--------------------------------   (app₂)
+        v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'
 ```
 
 Note that the first rule here returns the store unchanged, since
@@ -1308,10 +1304,10 @@ for the new constructs that manipulate locations and the store.
 First, to reduce a dereferencing expression `!t₁`, we must first
 reduce `t₁` until it becomes a value:
 
-```display
-                        t₁ / ρ ⟶ t₁' / ρ'
-                       --------------------- (deref)
-                       !t₁ / ρ ⟶ !t₁' / ρ'
+```display +centered
+ t₁ / ρ ⟶ t₁' / ρ'
+-------------------- (deref)
+!t₁ / ρ ⟶ !t₁' / ρ'
 ```
 Once `t₁` has finished reducing, we should have an expression of
 the form `!l`, where `l` is some location.  (A term that attempts
@@ -1322,34 +1318,34 @@ allocated store; the reduction rules simply get stuck in this
 case.  The type-safety properties established below assure us
 that well-typed terms will never misbehave in this way.)
 
-```display
-                               l < ρ.length
-                     ---------------------------------- (derefLoc)
-                     !(loc l) / ρ ⟶ ρ[l] / ρ
+```display +centered
+     l < ρ.length
+------------------------ (derefLoc)
+!(loc l) / ρ ⟶ ρ[l] / ρ
 ```
 
 Next, to reduce an assignment expression `t₁:=t₂`, we must first
 reduce `t₁` until it becomes a value (a location), and then
 reduce `t₂` until it becomes a value (of any sort):
 
-```display
-                        t₁ / ρ ⟶ t₁' / ρ'
-                 ----------------------------------- (assign₁)
-                 t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'
+```display +centered
+      t₁ / ρ ⟶ t₁' / ρ'
+------------------------------ (assign₁)
+t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'
 
-                        t₂ / ρ ⟶ t₂' / ρ'
-                  --------------------------------- (assign₂)
-                  v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'
+      t₂ / ρ ⟶ t₂' / ρ'
+------------------------------ (assign₂)
+v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'
 ```
 
 Once we have finished with `t₁` and `t₂`, we have an expression of
 the form `l:=v`, which we execute by updating the store to make
 location `l` contain `v`:
 
-```display
-                               l < ρ.length
-                -----------------------------------   (assign)
-                loc l := v / ρ ⟶ unit / [l:=v]ρ
+```display +centered
+         l < ρ.length
+-------------------------------- (assign)
+loc l := v / ρ ⟶ unit / [l:=v]ρ
 ```
 
 The notation `[l:=v]ρ` means "the store that maps `l` to `v`
@@ -1357,26 +1353,26 @@ and maps all other locations to the same thing as `ρ`". Note
 that the term resulting from this reduction step is just `unit`;
 the interesting result is the updated store.
 
-Finally, to reduct an expression of the form `ref t₁`, we first
+Finally, to reduce an expression of the form `ref t₁`, we first
 reduce `t₁` until it becomes a value:
 
-```display
-                        t₁ / ρ ⟶ t₁' / ρ'
-                    --------------------------- (ref)
-                    ref t₁ / ρ ⟶ ref t₁' / ρ'
+```display +centered
+    t₁ / ρ ⟶ t₁' / ρ'
+-------------------------- (ref)
+ref t₁ / ρ ⟶ ref t₁' / ρ'
 ```
 
 Then, to reduce the `ref` itself, we choose a fresh location at
-the end of the current store -- i.e., location `ρ.length` -- and yield
+the end of the current store — i.e., location `ρ.length` — and yield
 a new store that extends `ρ` with the new value `v`.
 
-```display
-          -------------------------------- (refValue)
-          ref v / ρ ⟶ loc ρ.length / ρ, v
+```display +centered
+-------------------------------- (refValue)
+ref v / ρ ⟶ loc ρ.length / ρ, v
 ```
 
 The value resulting from this step is the newly allocated location
-itself.  (Formally, `ρ, v` means `ρ.concat v` -- i.e., to add
+itself.  (Formally, `ρ, v` means `ρ.concat v` — i.e., to add
 a new reference cell to the store, we append it to the end.)
 
 Note that these reduction rules do not perform any kind of
@@ -1530,13 +1526,13 @@ first attempt at a typing rule for locations:
 ::::
 
 ::::terse
-As a first try, observe that the type of a location is  connected to the contents of the store `ρ`.
+As a first try, observe that the type of a location is connected to the contents of the store `ρ`.
 ::::
 
-```display
-         Γ ⊢ ρ[l] : τ₁
-      -------------------
-      Γ ⊢ loc l : Ref τ₁
+```display +centered
+ Γ ⊢ ρ[l] : τ₁
+------------------
+Γ ⊢ loc l : Ref τ₁
 ```
 
 But where does `ρ` come from?
@@ -1561,10 +1557,10 @@ references now has the form
 We could try adding `ρ` to the judgment: `Γ; ρ ⊢ t : τ`, which gives us this rule:
 ::::
 
-```display
-                     Γ; ρ ⊢ ρ[l] : τ₁
-                ------------------------------
-                    Γ; ρ ⊢ loc l : Ref τ₁
+```display +centered
+ Γ; ρ ⊢ ρ[l] : τ₁
+---------------------
+Γ; ρ ⊢ loc l : Ref τ₁
 ```
 
 ::::terse
@@ -1578,7 +1574,7 @@ Worse yet, it doesn't work at all for _cyclic_ stores.
 ::::full
 and all the rest of the typing rules in the system are extended
 similarly with stores.  (The other rules do not need to do anything
-interesting with their stores -- just pass them from premise to
+interesting with their stores — just pass them from premise to
 conclusion.)
 
 However, this rule will not quite do.  For one thing, typechecking
@@ -1595,7 +1591,7 @@ to this store:
 ::::
 
 ::::terse
-For example, what is the type of location `0` in the  following store?
+For example, what is the type of location `0` in the following store?
 ::::
 
 ```
@@ -1626,6 +1622,10 @@ theorem cyclic_store:
     apply Multi.refl
 ```
 ::::
+
+:::grade
+`GRADE_MANUAL 3: cyclic_store`
+:::
 :::::
 
 ::::full
@@ -1641,7 +1641,7 @@ into this location, those other values will always have the same
 type as the initial one.  In other words, we always have in mind a
 single, definite type for every location in the store, which is
 fixed when the location is allocated.  Then these intended types
-can be collected together as a _store typing_ -- a finite function
+can be collected together as a _store typing_ — a finite function
 mapping locations to types.
 
 As with the other type systems we've seen, this conservative typing
@@ -1700,11 +1700,10 @@ We can use the store typing `δ` to give a type to
 any location `l` like this:
 ::::
 
-
-```display
-        l < δ.length
-  --------------------------
-  Γ; δ ⊢ loc l : Ref δ[l]
+```display +centered
+     l < δ.length
+-----------------------
+Γ; δ ⊢ loc l : Ref δ[l]
 ```
 
 That is, as long as `l` is a valid location, we can compute the
@@ -1721,24 +1720,23 @@ references.  Here, again, are the rules we're adding to the base
 STLC (with numbers and `Unit`):
 ::::
 
+```display +centered
+     l < δ.length
+-----------------------  (loc)
+Γ; δ ⊢ loc l : Ref δ[l]
 
-```display
-                          l < δ.length
-                    ---------------------------             (loc)
-                    Γ; δ ⊢ loc l : Ref δ[l]
+    Γ; δ ⊢ t₁ : τ₁
+----------------------   (ref)
+Γ; δ ⊢ ref t₁ : Ref τ₁
 
-                         Γ; δ ⊢ t₁ : τ₁
-                     ---------------------------            (ref)
-                     Γ; δ ⊢ ref t₁ : Ref τ₁
+  Γ; δ ⊢ t₁ : Ref τ₁
+  ------------------     (deref)
+  Γ; δ ⊢ !t₁ : τ₁
 
-                      Γ; δ ⊢ t₁ : Ref τ₁
-                      -------------------------             (deref)
-                        Γ; δ ⊢ !t₁ : τ₁
-
-                      Γ; δ ⊢ t₁ : Ref τ₂
-                        Γ; δ ⊢ t₂ : τ₂
-                    -----------------------------           (assign)
-                    Γ; δ ⊢ t₁ := t₂ : Unit
+  Γ; δ ⊢ t₁ : Ref τ₂
+    Γ; δ ⊢ t₂ : τ₂
+----------------------   (assign)
+Γ; δ ⊢ t₁ := t₂ : Unit
 ```
 
 ```lean
@@ -1872,8 +1870,8 @@ so let's look at it first.
 
 ::::terse
 Standard theorems...
-- Progress -- pretty much same as always
-- Preservation -- needs to be stated more carefully!
+- Progress — pretty much same as always
+- Preservation — needs to be stated more carefully!
 ::::
 
 ## Well-Typed Stores
@@ -1884,12 +1882,12 @@ initial and final stores) and the typing relation (with a store
 typing), we need to change the statement of preservation to
 include these parameters.  But clearly we cannot just add stores
 and store typings without saying anything about how they are
-related -- i.e., this is wrong:
+related — i.e., this is wrong:
 ::::
 
 ::::terse
 The evaluation and typing relations take more parameters
-now, so at a minumum we have to add these to the statement of
+now, so at a minimum we have to add these to the statement of
 preservation...
 ::::
 
@@ -1905,7 +1903,7 @@ If we typecheck with respect to some set of assumptions
 about the types of the values in the store and then reduce with
 respect to a store that violates these assumptions, the result
 will be disaster.  We say that a store `ρ` is _well typed_ with
-respect a store typing `δ` if the term at each location `l` in
+respect to a store typing `δ` if the term at each location `l` in
 `ρ` has the type at location `l` in `δ`.  Since only closed
 terms ever get stored in locations (why?), it suffices to type
 them in the empty context. The following definition of
@@ -1953,7 +1951,7 @@ respect to both of the following store typings:
   δ₁  =  `Unit → Unit`
   δ₂  =  `Unit → (Unit→Unit)`.
 In fact, it is well typed with respect to any store typing of the form
-  δ   =  `Uniτ → τ`
+  δ   =  `Unit → τ`
 for any type `τ`.
 :::
 
@@ -1976,6 +1974,10 @@ theorem store_not_unique:
       · simp
 ```
 ::::
+
+:::grade
+`GRADE_MANUAL 3: store_not_unique`
+:::
 :::::
 
 We can now state something closer to the desired preservation property:
@@ -2004,9 +2006,9 @@ This works... for all but _one_ of the reduction rules! (Which?)
 
 ::::terse
 The `refValue` rule is the problem
-```display
-    -------------------------------- (refValue)
-        ref v / ρ ⟶ loc |ρ| / ρ,v
+```display +centered
+-------------------------- (refValue)
+ref v / ρ ⟶ loc |ρ| / ρ,v
 ```
 
 It allocates a fresh location `l` and adds it to the store, but
@@ -2426,7 +2428,7 @@ _Proof_: By induction on a derivation of `∅ / [] ⊢ t : τ`.
 
 - If the last rule in the derivation is `app`, then `t = t₁ t₂`
   for some `t₁` and `t₂` and `τ = τ₁₂`, with `∅ / δ ⊢ t₁ : τ₁₁ → τ₁₂`
-  and `∅ / δ ⊢ t₁ : τ₁₁`.  There are three cases to
+  and `∅ / δ ⊢ t₂ : τ₁₁`.  There are three cases to
   consider, one for each rule that could have been used to show
   that `t₁ t₂` takes a step to `t'`.
 
@@ -2513,6 +2515,8 @@ _Proof_: By induction on a derivation of `∅ / [] ⊢ t : τ`.
       finish this case.
 
     - (Other cases elided...)
+
+_QED_.
 :::
 
 :::grade
@@ -2648,7 +2652,7 @@ theorem progress (δ : StoreTy) (t : Tm) (τ : Ty) (ρ : Store)
 # References and Nontermination
 
 An important fact about the STLC
-is that it is is _normalizing_ - that is, every well-typed term
+is that it is _normalizing_ — that is, every well-typed term
 can be reduced to a value in a finite number of steps.
 
 What about STLC + references?  Surprisingly, adding references
@@ -2664,15 +2668,14 @@ then smuggle in a reference to itself!
 ```display
    (λR: Ref (Unit → Unit),
         R := (λx:Unit,(!R) unit); (!R) unit)
-   (ref (λX:Unit.unit))
+(ref (λX:Unit.unit))
 ```
-
 
 ::::full
 First, `ref (λX:Unit.unit)` creates a reference to a cell of
 type `Unit → Unit`.  We then pass this reference as the argument
 to a function which binds it to the name `R`, and assigns to it
-the function `λX:Unit.(!R) unit` - that is, the function which
+the function `λX:Unit.(!R) unit` — that is, the function which
 ignores its argument and calls the function stored in `R` on the
 argument `unit`; but of course, that function is itself!  To start
 the divergent loop, we execute the function stored in the cell by
@@ -2808,7 +2811,7 @@ end RefsAndNontermination
 :::
 
 :::::full
-::::exercise (rating := 5) (name := "factorial_ref") (optional := true)
+::::exercise (rating := 5) (name := "garbage_collector") (optional := true)
 Challenge problem: modify our formalization to include an account
 of garbage collection, and prove that it satisfies whatever nice
 properties you can think to prove about it.

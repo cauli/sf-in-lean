@@ -1,0 +1,267 @@
+{
+ "file": "TS/References.lean",
+ "chapter": "References",
+ "round": 1,
+ "proposals": [
+  {
+   "id": "p01",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n                           Γ ⊢ t₁ ⦂ τ₁\n                       --------------------                   (ref)\n                       Γ ⊢ ref t₁ ⦂ Ref τ₁\n\n                        Γ ⊢ t₁ ⦂ Ref τ₁\n                        -------------------                   (deref)\n                          Γ ⊢ !t₁ ⦂ τ₁\n\n                        Γ ⊢ t₁ ⦂ Ref τ₂\n                          Γ ⊢ t₂ ⦂ τ₂\n                       --------------------                  (assign)\n                       Γ ⊢ t₁ := t₂ : Unit\n```\n",
+   "new": "```display +centered\n      Γ ⊢ t₁ ⦂ τ₁\n---------------------  (ref)\n  Γ ⊢ ref t₁ ⦂ Ref τ₁\n\n      Γ ⊢ t₁ ⦂ Ref τ₁\n---------------------  (deref)\n     Γ ⊢ !t₁ ⦂ τ₁\n\n      Γ ⊢ t₁ ⦂ Ref τ₂\n      Γ ⊢ t₂ ⦂ τ₂\n---------------------  (assign)\nΓ ⊢ t₁ := t₂ : Unit\n```\n",
+   "why": "Use `display +centered` (not a bare fence) and move the figure to a minimal left margin, per STYLE-CODE.md."
+  },
+  {
+   "id": "p02",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n                              v₂.IsValue\n                -------------------------------------               (appAbs)\n                (λx:τ₂. t₁) v₂ / ρ ⟶ [x:=v₂] t₁ / ρ\n\n                        t₁ / ρ ⟶ t₁' / ρ'\n                     ---------------------------                      (app₁)\n                     t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'\n\n                  v₁.IsValue     t₂ / ρ ⟶ t₂' / ρ'\n                  ----------------------------------                  (app₂)\n                     v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'\n```\n",
+   "new": "```display +centered\n            v₂.IsValue\n-----------------------------------  (appAbs)\n(λx:τ₂. t₁) v₂ / ρ ⟶ [x:=v₂] t₁ / ρ\n\n            t₁ / ρ ⟶ t₁' / ρ'\n--------------------------------     (app₁)\n         t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'\n\n           v₁.IsValue\n            t₂ / ρ ⟶ t₂' / ρ'\n--------------------------------     (app₂)\n         v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'\n```\n",
+   "why": "Use `display +centered`, move left, and split `app₂`'s two premises (packed on one source line) onto separate lines, per STYLE-CODE.md."
+  },
+  {
+   "id": "p03",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n                   ------------------------------                  (refValue)\n                   ref v / ρ ⟶ loc ρ.length / ρ,v\n\n                        t₁ / ρ ⟶ t₁' / ρ'\n                    -----------------------------                    (ref)\n                    ref t₁ / ρ ⟶ ref t₁' / ρ'\n\n                               l < ρ.length\n                     ----------------------------------            (derefLoc)\n                     !(loc l) / ρ ⟶ ρ[l] / ρ\n\n                        t₁ / ρ ⟶ t₁' / ρ'\n                       -----------------------                       (deref)\n                       !t₁ / ρ ⟶ !t₁' / ρ'\n\n                               l < ρ.length\n                ------------------------------------------         (assign)\n                loc l := v / ρ ⟶ unit / List.set ρ l v\n\n                        t₁ / ρ ⟶ t₁' / ρ'\n                 -----------------------------------               (assign₁)\n                 t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'\n\n                        t₂ / ρ ⟶ t₂' / ρ'\n                 -----------------------------------               (assign₂)\n                 v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'\n```\n",
+   "new": "```display +centered\n-----------------------------------     (refValue)\n     ref v / ρ ⟶ loc ρ.length / ρ,v\n\n        t₁ / ρ ⟶ t₁' / ρ'\n-----------------------------           (ref)\n    ref t₁ / ρ ⟶ ref t₁' / ρ'\n\n      l < ρ.length\n-------------------------               (derefLoc)\n  !(loc l) / ρ ⟶ ρ[l] / ρ\n\n        t₁ / ρ ⟶ t₁' / ρ'\n--------------------------              (deref)\n       !t₁ / ρ ⟶ !t₁' / ρ'\n\n             l < ρ.length\n--------------------------------------  (assign)\nloc l := v / ρ ⟶ unit / List.set ρ l v\n\n        t₁ / ρ ⟶ t₁' / ρ'\n-------------------------------         (assign₁)\n  t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'\n\n        t₂ / ρ ⟶ t₂' / ρ'\n-------------------------------         (assign₂)\n  v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'\n```\n",
+   "why": "Use `display +centered` and move the figure to a minimal left margin, per STYLE-CODE.md."
+  },
+  {
+   "id": "p04",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n                               value v₂\n                ------------------------------------- (appAbs)\n                (λx:τ₂,t₁) v₂ / ρ ⟶ [x:=v₂]t₁ / ρ\n\n                        t₁ / ρ ⟶ t₁' / ρ'\n                     --------------------------- (app₁)\n                     t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'\n\n                  value v₁     t₂ / ρ ⟶ t₂' / ρ'\n                  ---------------------------------- (app₂)\n                     v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'\n```\n",
+   "new": "```display +centered\n            value v₂\n---------------------------------  (appAbs)\n(λx:τ₂,t₁) v₂ / ρ ⟶ [x:=v₂]t₁ / ρ\n\n           t₁ / ρ ⟶ t₁' / ρ'\n-------------------------------    (app₁)\n        t₁ t₂ / ρ ⟶ t₁' t₂ / ρ'\n\n           value v₁\n           t₂ / ρ ⟶ t₂' / ρ'\n-------------------------------    (app₂)\n        v₁ t₂ / ρ ⟶ v₁ t₂' / ρ'\n```\n",
+   "why": "Use `display +centered`, move left, and split `app₂`'s two premises (packed on one source line) onto separate lines, per STYLE-CODE.md."
+  },
+  {
+   "id": "p05",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n                        t₁ / ρ ⟶ t₁' / ρ'\n                       --------------------- (deref)\n                       !t₁ / ρ ⟶ !t₁' / ρ'\n```\n",
+   "new": "```display +centered\n t₁ / ρ ⟶ t₁' / ρ'\n-------------------  (deref)\n!t₁ / ρ ⟶ !t₁' / ρ'\n```\n",
+   "why": "Use `display +centered` and move left, per STYLE-CODE.md."
+  },
+  {
+   "id": "p06",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n                               l < ρ.length\n                     ---------------------------------- (derefLoc)\n                     !(loc l) / ρ ⟶ ρ[l] / ρ\n```\n",
+   "new": "```display +centered\n     l < ρ.length\n-----------------------  (derefLoc)\n!(loc l) / ρ ⟶ ρ[l] / ρ\n```\n",
+   "why": "Use `display +centered` and move left, per STYLE-CODE.md."
+  },
+  {
+   "id": "p07",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n                        t₁ / ρ ⟶ t₁' / ρ'\n                 ----------------------------------- (assign₁)\n                 t₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'\n\n                        t₂ / ρ ⟶ t₂' / ρ'\n                  --------------------------------- (assign₂)\n                  v₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'\n```\n",
+   "new": "```display +centered\n      t₁ / ρ ⟶ t₁' / ρ'\n-----------------------------  (assign₁)\nt₁ := t₂ / ρ ⟶ t₁' := t₂ / ρ'\n\n      t₂ / ρ ⟶ t₂' / ρ'\n-----------------------------  (assign₂)\nv₁ := t₂ / ρ ⟶ v₁ := t₂' / ρ'\n```\n",
+   "why": "Use `display +centered` and move left, per STYLE-CODE.md."
+  },
+  {
+   "id": "p08",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n                               l < ρ.length\n                -----------------------------------   (assign)\n                loc l := v / ρ ⟶ unit / [l:=v]ρ\n```\n",
+   "new": "```display +centered\n         l < ρ.length\n-------------------------------  (assign)\nloc l := v / ρ ⟶ unit / [l:=v]ρ\n```\n",
+   "why": "Use `display +centered` and move left, per STYLE-CODE.md."
+  },
+  {
+   "id": "p09",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n                        t₁ / ρ ⟶ t₁' / ρ'\n                    --------------------------- (ref)\n                    ref t₁ / ρ ⟶ ref t₁' / ρ'\n```\n",
+   "new": "```display +centered\n    t₁ / ρ ⟶ t₁' / ρ'\n-------------------------  (ref)\nref t₁ / ρ ⟶ ref t₁' / ρ'\n```\n",
+   "why": "Use `display +centered` and move left, per STYLE-CODE.md."
+  },
+  {
+   "id": "p10",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n          -------------------------------- (refValue)\n          ref v / ρ ⟶ loc ρ.length / ρ, v\n```\n",
+   "new": "```display +centered\n-------------------------------  (refValue)\nref v / ρ ⟶ loc ρ.length / ρ, v\n```\n",
+   "why": "Use `display +centered` and move left, per STYLE-CODE.md."
+  },
+  {
+   "id": "p11",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n         Γ ⊢ ρ[l] : τ₁\n      -------------------\n      Γ ⊢ loc l : Ref τ₁\n```\n",
+   "new": "```display +centered\n Γ ⊢ ρ[l] : τ₁\n------------------\nΓ ⊢ loc l : Ref τ₁\n```\n",
+   "why": "Use `display +centered` and move left, per STYLE-CODE.md."
+  },
+  {
+   "id": "p12",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n                     Γ; ρ ⊢ ρ[l] : τ₁\n                ------------------------------\n                    Γ; ρ ⊢ loc l : Ref τ₁\n```\n",
+   "new": "```display +centered\n Γ; ρ ⊢ ρ[l] : τ₁\n---------------------\nΓ; ρ ⊢ loc l : Ref τ₁\n```\n",
+   "why": "Use `display +centered` and move left, per STYLE-CODE.md."
+  },
+  {
+   "id": "p13",
+   "cat": "formatting/rule-figure",
+   "old": "::::\n\n\n```display\n        l < δ.length\n  --------------------------\n  Γ; δ ⊢ loc l : Ref δ[l]\n```\n",
+   "new": "::::\n\n```display +centered\n     l < δ.length\n-----------------------\nΓ; δ ⊢ loc l : Ref δ[l]\n```\n",
+   "why": "Use `display +centered` and move left, per STYLE-CODE.md; also collapses the adjacent run of two blank lines."
+  },
+  {
+   "id": "p14",
+   "cat": "formatting/rule-figure",
+   "old": "::::\n\n\n```display\n                          l < δ.length\n                    ---------------------------             (loc)\n                    Γ; δ ⊢ loc l : Ref δ[l]\n\n                         Γ; δ ⊢ t₁ : τ₁\n                     ---------------------------            (ref)\n                     Γ; δ ⊢ ref t₁ : Ref τ₁\n\n                      Γ; δ ⊢ t₁ : Ref τ₁\n                      -------------------------             (deref)\n                        Γ; δ ⊢ !t₁ : τ₁\n\n                      Γ; δ ⊢ t₁ : Ref τ₂\n                        Γ; δ ⊢ t₂ : τ₂\n                    -----------------------------           (assign)\n                    Γ; δ ⊢ t₁ := t₂ : Unit\n```\n",
+   "new": "::::\n\n```display +centered\n     l < δ.length\n-----------------------  (loc)\nΓ; δ ⊢ loc l : Ref δ[l]\n\n    Γ; δ ⊢ t₁ : τ₁\n----------------------   (ref)\nΓ; δ ⊢ ref t₁ : Ref τ₁\n\n  Γ; δ ⊢ t₁ : Ref τ₁\n  ------------------     (deref)\n  Γ; δ ⊢ !t₁ : τ₁\n\n  Γ; δ ⊢ t₁ : Ref τ₂\n    Γ; δ ⊢ t₂ : τ₂\n----------------------   (assign)\nΓ; δ ⊢ t₁ := t₂ : Unit\n```\n",
+   "why": "Use `display +centered`. The `deref` rule is too unbalanced around `:` to symbol-align with the others, so per STYLE-CODE.md the whole block is centered instead. Also collapses the adjacent run of two blank lines."
+  },
+  {
+   "id": "p15",
+   "cat": "formatting/rule-figure",
+   "old": "```display\n    -------------------------------- (refValue)\n        ref v / ρ ⟶ loc |ρ| / ρ,v\n```\n",
+   "new": "```display +centered\n-------------------------  (refValue)\nref v / ρ ⟶ loc |ρ| / ρ,v\n```\n",
+   "why": "Use `display +centered` and move left, per STYLE-CODE.md."
+  },
+  {
+   "id": "p16",
+   "cat": "formatting/blank-lines",
+   "old": "  | _ => throw ()\n\n\n@[app_unexpander Tm.ite0]\n",
+   "new": "  | _ => throw ()\n\n@[app_unexpander Tm.ite0]\n",
+   "why": "A run of two blank lines; the source uses at most one anywhere."
+  },
+  {
+   "id": "p17",
+   "cat": "formatting/blank-lines",
+   "old": "  | _ => throw ()\n\n\n@[app_unexpander Tm.unit]\n",
+   "new": "  | _ => throw ()\n\n@[app_unexpander Tm.unit]\n",
+   "why": "A run of two blank lines; the source uses at most one anywhere."
+  },
+  {
+   "id": "p18",
+   "cat": "formatting/blank-lines",
+   "old": "  | _ => throw ()\n\n\nend Delab\n",
+   "new": "  | _ => throw ()\n\nend Delab\n",
+   "why": "A run of two blank lines; the source uses at most one anywhere."
+  },
+  {
+   "id": "p19",
+   "cat": "formatting/blank-lines",
+   "old": ":::\n\n\n# Pragmatics\n",
+   "new": ":::\n\n# Pragmatics\n",
+   "why": "A run of two blank lines; the source uses at most one anywhere."
+  },
+  {
+   "id": "p20",
+   "cat": "formatting/blank-lines",
+   "old": "R₂  // yields 1, not 2!\n```\n\n\n:::::full\n::::exercise (rating := 1) (name := \"store_draw\") (manual := true)\n",
+   "new": "R₂  // yields 1, not 2!\n```\n\n:::::full\n::::exercise (rating := 1) (name := \"store_draw\") (manual := true)\n",
+   "why": "A run of two blank lines; the source uses at most one anywhere."
+  },
+  {
+   "id": "p21",
+   "cat": "formatting/blank-lines",
+   "old": "that we don't will require a bit of work.)\n\n\n```lean\n",
+   "new": "that we don't will require a bit of work.)\n\n```lean\n",
+   "why": "A run of two blank lines; the source uses at most one anywhere."
+  },
+  {
+   "id": "p22",
+   "cat": "formatting/blank-lines",
+   "old": "   (ref (λX:Unit.unit))\n```\n\n\n::::full\nFirst, `ref (λX:Unit.unit)` creates a reference to a cell of\n",
+   "new": "(ref (λX:Unit.unit))\n```\n\n::::full\nFirst, `ref (λX:Unit.unit)` creates a reference to a cell of\n",
+   "why": "A run of two blank lines; the source uses at most one anywhere."
+  },
+  {
+   "id": "p23",
+   "cat": "style/proof-by",
+   "old": "example (x : Tm) : (<{ x }> : Tm) = x := rfl",
+   "new": "example (x : Tm) : (<{ x }> : Tm) = x := by rfl",
+   "why": "A proof always opens with `by`; write `:= by rfl` rather than the bare term `:= rfl`."
+  },
+  {
+   "id": "p24",
+   "cat": "markup/stray-marker",
+   "old": "::::terse\nTERSE: One more difference between our references and C-style",
+   "new": "::::terse\nOne more difference between our references and C-style",
+   "why": "The `TERSE:` prefix is a leftover marker word; it's already inside a `::::terse` directive, and every other paragraph in the chapter has this prefix stripped."
+  },
+  {
+   "id": "p25",
+   "cat": "grammar/redundant-possessive",
+   "old": "variable is a reminder of this).  Instead, their purpose of these\nabstractions is to \"slow down\" the execution of the function",
+   "new": "variable is a reminder of this).  Instead, the purpose of these\nabstractions is to \"slow down\" the execution of the function",
+   "why": "\"their purpose of these abstractions\" double-marks possession; \"the purpose of these abstractions\" says the same thing once."
+  },
+  {
+   "id": "p26",
+   "cat": "comma/introductory",
+   "old": "Instead, like many modern languages (including OCaml, Haskell, Java,\netc.) we rely on the run-time system to perform _garbage collection_,",
+   "new": "Instead, like many modern languages (including OCaml, Haskell, Java,\netc.), we rely on the run-time system to perform _garbage collection_,",
+   "why": "A comma after the long introductory parenthetical sets off the main clause."
+  },
+  {
+   "id": "p27",
+   "cat": "comma/misplaced",
+   "old": "  - More abstractly: a list or array, of values",
+   "new": "  - More abstractly: a list or array of values",
+   "why": "The comma splits \"a list or array\" from its modifier \"of values\" for no reason."
+  },
+  {
+   "id": "p28",
+   "cat": "capitalization/proper-adjective",
+   "old": "functional representation we used in Imp.) We will use the greek letter ρ",
+   "new": "functional representation we used in Imp.) We will use the Greek letter ρ",
+   "why": "\"Greek\" is a proper adjective and is capitalized."
+  },
+  {
+   "id": "p29",
+   "cat": "typo/missing-mark",
+   "old": "where `ρ` and `ρ` are the starting and ending states of",
+   "new": "where `ρ` and `ρ'` are the starting and ending states of",
+   "why": "The relation is `t / ρ ⟶ t' / ρ'`, so the second store should be `ρ'`, matching the ending state."
+  },
+  {
+   "id": "p30",
+   "cat": "typo/misspelling",
+   "old": "Finally, to reduct an expression of the form `ref t₁`, we first",
+   "new": "Finally, to reduce an expression of the form `ref t₁`, we first",
+   "why": "\"reduct\" is not a verb here; the sentence means \"reduce\"."
+  },
+  {
+   "id": "p31",
+   "cat": "formatting/double-space",
+   "old": "As a first try, observe that the type of a location is  connected to the contents of the store `ρ`.",
+   "new": "As a first try, observe that the type of a location is connected to the contents of the store `ρ`.",
+   "why": "Stray double space mid-sentence (not after a sentence-ending period)."
+  },
+  {
+   "id": "p32",
+   "cat": "formatting/double-space",
+   "old": "For example, what is the type of location `0` in the  following store?",
+   "new": "For example, what is the type of location `0` in the following store?",
+   "why": "Stray double space mid-sentence (not after a sentence-ending period)."
+  },
+  {
+   "id": "p33",
+   "cat": "typo/garbled-text",
+   "old": "  δ   =  `Uniτ → τ`",
+   "new": "  δ   =  `Unit → τ`",
+   "why": "\"Uniτ\" is garbled; the store typing being generalized is `Unit → τ` (vs. the `Unit → Unit` and `Unit → (Unit→Unit)` instances just above)."
+  },
+  {
+   "id": "p34",
+   "cat": "typo/misspelling",
+   "old": "now, so at a minumum we have to add these to the statement of",
+   "new": "now, so at a minimum we have to add these to the statement of",
+   "why": "\"minumum\" -> \"minimum\"."
+  },
+  {
+   "id": "p35",
+   "cat": "typo/missing-word",
+   "old": "respect a store typing `δ` if the term at each location `l` in",
+   "new": "respect to a store typing `δ` if the term at each location `l` in",
+   "why": "\"with respect a store typing\" is missing \"to\"."
+  },
+  {
+   "id": "p36",
+   "cat": "typo/duplicated-word",
+   "old": "is that it is is _normalizing_ - that is, every well-typed term",
+   "new": "is that it is _normalizing_ -- that is, every well-typed term",
+   "why": "\"is is\" doubles a word, and the single hyphen should be the chapter's `--` dash (as used everywhere else, including the very next clause's \"that is\" construction elsewhere in the chapter)."
+  },
+  {
+   "id": "p37",
+   "cat": "markup/dash",
+   "old": "the function `λX:Unit.(!R) unit` - that is, the function which",
+   "new": "the function `λX:Unit.(!R) unit` -- that is, the function which",
+   "why": "Single `-` should be the chapter's `--` dash, as used everywhere else in the chapter."
+  }
+ ],
+ "completed": true
+}
