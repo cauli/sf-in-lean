@@ -16,15 +16,17 @@
 // The book's other code blocks, its examples and the proofs it gives, get
 // "Edit" and the same menu in their corner, so that a reader can change one
 // and see what Lean makes of the change.  The editor checks the block in the
-// context an exercise in its place would get.  A change to a block stays in
-// that block: the code after it is checked against the book's version.
+// context an exercise in its place would get.
 //
 // The context for an exercise comes from `sfl-lean/data/<Chapter>.json`
 // (written by scripts/web_exercises.py): the chapters it imports and the
 // chapter itself up to the exercise, with theorem proofs replaced by `sorry`.
-// When the reader has already solved an earlier exercise here, their solution
-// replaces the `sorry` version, as it would in a downloaded .lean file worked
-// from top to bottom.
+// The reader's own code takes the place of the book's there, as it would in a
+// downloaded .lean file worked from top to bottom: their solution of each
+// earlier exercise once Lean accepts it, and their edit of each earlier block
+// on this page as it stands.  An edited block is tagged "Edited" on the page,
+// and an editor below it says which edits its check includes and which of
+// them Lean found errors in, with buttons that go to an edit or reset it.
 //
 // Settings come from the attributes of this script's tag:
 //   data-runtime   base URL of lean.js, lean.wasm, lean-lib-files.json and
@@ -103,20 +105,62 @@
 
   // ── Building the file Lean checks ─────────────────────────────────────────
 
-  // The reader's checked solutions replace the `sorry` versions of exercises
-  // that come before this one, so later exercises can use them.
-  function withAnswers(skeleton, exercises, chapter, upto) {
-    let out = '';
-    let pos = 0;
-    const end = upto === undefined ? skeleton.length : upto;
-    for (const e of [...exercises].sort((a, b) => a.context - b.context)) {
-      if (e.context >= end) break;
-      const answer = load('solved:' + chapter + ':' + e.name);
-      if (answer == null) continue;
-      out += skeleton.slice(pos, e.context) + answer.trimEnd() + '\n\n';
-      pos = e.contextEnd;
+  // The key under which what the reader writes for an exercise or a block is
+  // saved.  A block's is its code, so that a draft does not come back on a
+  // block whose code has since changed.
+  const keys = new WeakMap();
+  function keyOf(chapter, item) {
+    if (!keys.has(item)) keys.set(item, chapter + ':' + (item.block ? 'block:' + hashCode(item.code) : item.name));
+    return keys.get(item);
+  }
+
+  // Code that differs from another only in blank lines or spaces at its end
+  // is the same code: deleting a line the reader added often leaves its line
+  // break behind.
+  function sameCode(a, b) {
+    return a.trimEnd() === b.trimEnd();
+  }
+
+  // The reader's edit of a block, or null where they have none.
+  function blockDraft(chapter, block) {
+    const text = load('draft:' + keyOf(chapter, block));
+    return text != null && !sameCode(text, block.code) ? text : null;
+  }
+
+  // What the reader wrote in place of a chapter's code, in the chapter's
+  // order: their accepted solutions of exercises and their edits of blocks.
+  // The body of an `sf_expect_failure_in` or an `sf_experiment` is checked on
+  // its own, so an edit of it changes nothing after it.
+  function readerPieces(chapter, exercises, blocks = []) {
+    const out = [];
+    for (const e of exercises) {
+      const text = load('solved:' + keyOf(chapter, e));
+      if (text != null) out.push({ item: e, text: text.trimEnd() });
     }
-    return out + skeleton.slice(pos, end);
+    for (const b of blocks) {
+      const text = !b.standalone && blockDraft(chapter, b);
+      if (text) out.push({ item: b, text: text.trimEnd() });
+    }
+    return out.sort((a, b) => a.item.context - b.item.context || a.item.studentLine - b.item.studentLine);
+  }
+
+  // `skeleton`, up to the exercise or block `until` if one is given, with
+  // the reader's pieces from before it in place of the book's code.  Pieces
+  // are placed by line, as an example dropped from the skeleton takes no
+  // room in it.  `spliced` says where each piece landed, as offsets.
+  function withReaderCode(skeleton, pieces, until) {
+    const end = until ? until.context : skeleton.length;
+    let text = '';
+    let pos = 0;
+    const spliced = [];
+    for (const piece of pieces) {
+      if (until && piece.item.studentLine >= until.studentLine) continue;
+      text += skeleton.slice(pos, piece.item.context);
+      spliced.push({ item: piece.item, from: text.length, to: text.length + piece.text.length });
+      text += piece.text + '\n\n';
+      pos = piece.item.contextEnd;
+    }
+    return { text: text + skeleton.slice(pos, end), spliced };
   }
 
   function header(data) {
@@ -133,27 +177,41 @@
   }
 
   // The whole file, and the line at which the reader's code starts.  A block
-  // from the text comes as an exercise does, with `block` set.
+  // from the text comes as an exercise does, with `block` set.  With
+  // `useAnswers`, the reader's code takes the place of the book's above it,
+  // and `spliced` gives the lines of the context where each of this
+  // chapter's pieces is.
   function compose(data, exercise, code, { useAnswers, banner }) {
     const lib = data.library.map((c) => {
       const chapter = c.module.split('.').slice(1).join('.');
-      const sk = useAnswers ? withAnswers(c.skeleton, c.exercises, chapter) : c.skeleton;
+      const sk = useAnswers ? withReaderCode(c.skeleton, readerPieces(chapter, c.exercises)).text : c.skeleton;
       return `-- ${c.module}, with proofs omitted\nsection\n\n${sk}end\n\n`;
     }).join('');
-    const ctx = closeTrailingIn(useAnswers
-      ? withAnswers(data.skeleton, data.exercises, data.chapter, exercise.context)
-      : data.skeleton.slice(0, exercise.context));
+    const own = useAnswers
+      ? withReaderCode(data.skeleton, readerPieces(data.chapter, data.exercises, data.blocks), exercise)
+      : { text: data.skeleton.slice(0, exercise.context), spliced: [] };
     let before = header(data) + '\n' + lib +
       `-- ${data.module}, up to this ${exercise.block ? 'code' : 'exercise'}, with proofs omitted\n` +
-      'section\n\n' + ctx +
+      'section\n\n';
+    let start = before.length;
+    before += closeTrailingIn(own.text) +
       (exercise.block ? `-- From the text: ${exercise.name}\n\n` : `-- Exercise: ${exercise.name}\n\n`);
     if (banner) {
       // Count the banner's own lines too, so the line it names is exact.
-      const draft = banner(0) + before;
-      const line = draft.split('\n').length;
-      before = banner(line) + before;
+      const line = (banner(0) + before).split('\n').length;
+      const text = banner(line);
+      before = text + before;
+      start += text.length;
     }
-    return { text: before + code, context: before, codeLine: before.split('\n').length };
+    // The pieces come in order, so their lines are counted in one pass.
+    let line = 1;
+    let counted = 0;
+    const lineAt = (offset) => {
+      for (; counted < offset; counted++) if (before.charCodeAt(counted) === 10) line++;
+      return line;
+    };
+    const spliced = own.spliced.map((s) => ({ item: s.item, line: lineAt(start + s.from), endLine: lineAt(start + s.to) }));
+    return { text: before + code, context: before, codeLine: before.split('\n').length, spliced };
   }
 
   // ── What Lean reports at a position ───────────────────────────────────────
@@ -288,12 +346,15 @@
         // completions); older ones only compile.
         this.queries = !!msg.queries;
         this.setStatus('Lean is ready.');
+        rechecks.next();
       } else if (msg.type === 'failed') {
         this.fail(msg.error);
       } else if (msg.type === 'answer') {
         const resolve = this.pending.get(msg.id);
         this.pending.delete(msg.id);
         if (resolve) resolve(msg);
+        // After the editor that asked has sent what it asks next, if anything.
+        setTimeout(() => rechecks.next());
       }
     },
 
@@ -485,8 +546,10 @@
   }
 
   // What a check says of the reader's code.  A solution is code Lean accepts
-  // with no goals left and no `sorry`.
-  function verdict({ own, context, error }, block) {
+  // with no goals left and no `sorry`, after code above it that Lean accepts
+  // too.  `carried` is whether the code after a block uses the reader's
+  // version of it.
+  function verdict({ own, context, error }, block, carried) {
     const errors = own.filter((m) => category(m) === 'error').length;
     // Goals left at the end only mean "not finished"; the goal view shows
     // them, so they are counted, not listed.
@@ -497,8 +560,10 @@
       : errors ? `${errors} error${errors > 1 ? 's' : ''}`
         : left ? `Not finished yet: ${left} goal${left > 1 ? 's' : ''} left`
           : sorry ? 'No errors, but the proof still uses sorry'
-            : block ? '✓ Lean accepts this'
-              : '✓ Lean accepts this; the exercises after it will use your solution';
+            : context.length ? 'No errors here, but the code above it has errors'
+              : carried ? '✓ Lean accepts this; the code after it uses your version'
+                : block ? '✓ Lean accepts this'
+                  : '✓ Lean accepts this; the exercises after it will use your solution';
     return { solved, text };
   }
 
@@ -767,9 +832,7 @@
       this.data = data;
       this.exercise = exercise;
       this.box = box;
-      // A block's draft is kept under its code, so that it does not come back
-      // on a block whose code has since changed.
-      this.key = data.chapter + ':' + (exercise.block ? 'block:' + hashCode(exercise.code) : exercise.name);
+      this.key = keyOf(data.chapter, exercise);
       this.hidden = hidden;
 
       this.textarea = el('textarea', {
@@ -789,11 +852,13 @@
       this.runButton = el('button', { class: 'sfl-run', type: 'button', onclick: () => this.run() }, 'Run');
       this.status = el('span', { class: 'sfl-status', role: 'status' });
       this.messages = el('div', { class: 'sfl-messages' });
+      this.above = el('div', { class: 'sfl-above', hidden: '' });
       this.goals = el('div', { class: 'sfl-goals', 'aria-live': 'polite' });
       this.bar = el('div', { class: 'sfl-bar' }, this.runButton,
         el('span', { class: 'sfl-hint' }, navigator.platform.startsWith('Mac') ? '⌘↵' : 'Ctrl+↵'),
         this.status);
       this.root = el('div', { class: 'sfl-editor' },
+        this.above,
         el('div', { class: 'sfl-code' }, this.gutter, this.area),
         this.goals,
         this.bar,
@@ -804,6 +869,9 @@
       this.squiggles = [];
       this.completion = null;
       this.completionSeq = 0;
+      // How many times the code above changed: a check's answer is dropped if
+      // it changed again while Lean worked.
+      this.aboveChanges = 0;
 
       this.textarea.addEventListener('input', (e) => this.onInput(e));
       this.textarea.addEventListener('keydown', (e) => this.onKey(e));
@@ -834,8 +902,17 @@
         const line = Array.prototype.indexOf.call(this.gutter.children, row) + 1;
         this.showSuggestionsAt(line, row.querySelector('.sfl-mark').getBoundingClientRect());
       });
-      this.root.addEventListener('focusin', () => this.updateInfoview());
-      this.root.addEventListener('focusout', () => setTimeout(() => this.updateInfoview()));
+      this.root.addEventListener('focusin', () => {
+        this.updateInfoview();
+        if (this.stale || rechecks.waiting.has(this)) this.recheck();
+      });
+      this.root.addEventListener('focusout', () => setTimeout(() => {
+        this.updateInfoview();
+        if (!this.root.contains(document.activeElement)) {
+          rechecks.hold();
+          recheckStale();
+        }
+      }));
       this.onLean = () => this.showStatus();
       lean.listeners.add(this.onLean);
       loadAbbreviations();
@@ -846,6 +923,7 @@
       infoview.editors.add(this);
       const anchor = this.hidden[this.hidden.length - 1] || this.box.lastElementChild;
       anchor.after(this.root);
+      rechecks.watch(this);
       for (const block of this.hidden) block.classList.add('sfl-replaced');
       this.render();
       this.showStatus();
@@ -878,10 +956,12 @@
       this.root.remove();
       lean.listeners.delete(this.onLean);
       infoview.editors.delete(this);
+      rechecks.forget(this);
       if (infoview.owner === this) {
         infoview.owner = null;
         infoview.node.hidden = true;
       }
+      recheckStale();
     }
 
     reset() {
@@ -889,6 +969,7 @@
       this.handledValue = this.textarea.value;
       save('draft:' + this.key, null);
       save('solved:' + this.key, null);
+      readerCodeChanged(this.exercise);
       this.reported = false;
       this.root.classList.remove('sfl-solved');
       this.showStatus();
@@ -900,8 +981,47 @@
       this.scheduleCheck(0);
     }
 
+    // The file Lean checks this code in; see compose.
+    composed(code) {
+      return compose(this.data, this.exercise, code, { useAnswers: true });
+    }
+
     context(code) {
-      return compose(this.data, this.exercise, code, { useAnswers: true }).context;
+      return this.composed(code).context;
+    }
+
+    // The reader is changing the code above this, and with it what this code
+    // is checked in.  Checking again at each pause in their typing would make
+    // Lean check the other editor's context and this one's in turn, so this
+    // waits until they leave that editor or come here.
+    markStale() {
+      this.stale = true;
+      this.aboveChanges++;
+      rechecks.waiting.delete(this);
+      this.setPending(true);
+      this.say('The code above is being edited. This checks again when you leave that editor, or click here.');
+    }
+
+    // Check again, as the code above changed: at once if the reader is here,
+    // and otherwise when Lean gets to it (see rechecks).  Until the check is
+    // back, its verdict is greyed as it is while the reader types.
+    recheck() {
+      this.stale = false;
+      this.aboveChanges++;
+      this.setPending(true);
+      if (this.root.contains(document.activeElement)) {
+        rechecks.waiting.delete(this);
+        this.say('Checking again with the code above…');
+        this.scheduleCheck(0);
+      } else {
+        rechecks.add(this);
+      }
+    }
+
+    // Put `text` in the status line, where it stays until a check reports.
+    say(text) {
+      this.status.textContent = text;
+      this.reported = true;
     }
 
     // `offset` in the text as a 1-based line, the editor's column in it, and
@@ -919,7 +1039,9 @@
       // one edit, as two input events.
       if (this.textarea.value === this.handledValue) return;
       this.handledValue = this.textarea.value;
-      save('draft:' + this.key, this.textarea.value === this.exercise.code ? null : this.textarea.value);
+      rechecks.hold();
+      save('draft:' + this.key, sameCode(this.textarea.value, this.exercise.code) ? null : this.textarea.value);
+      if (this.exercise.block) readerCodeChanged(this.exercise);
       // A run's list of messages was about the code before this edit.  The
       // verdict and the goal view stay until the next check replaces them,
       // which comes once typing pauses; they are greyed only if it is slow to
@@ -1085,7 +1207,9 @@
 
     // Check the code (the worker skips this when it is unchanged), mark
     // Lean's messages in it, and show what Lean has at the cursor.  One check
-    // runs at a time; one asked for meanwhile runs after it.
+    // runs at a time; one asked for meanwhile runs after it.  An answer about
+    // code that has changed since, here or above, is dropped, as the check
+    // that follows the change replaces it.
     async check() {
       if (this.closed) return;
       if (lean.state !== 'ready') {
@@ -1100,15 +1224,18 @@
       if (this.checking) { this.checkAgain = true; return; }
       this.checking = true;
       const code = this.textarea.value;
+      const changes = this.aboveChanges;
       const cursor = this.position(this.textarea.selectionStart, code);
-      const answer = await lean.info(code, this.context(code), cursor.line, cursor.column);
+      const composed = this.composed(code);
+      const answer = await lean.info(code, composed.context, cursor.line, cursor.column);
       this.checking = false;
-      if (code === this.textarea.value && !this.closed) {
+      if (code === this.textarea.value && changes === this.aboveChanges && !this.closed) {
         clearTimeout(this.pendingTimer);
         this.setPending(false);
         if (answer.result) {
           const described = describe(answer.result, code);
           this.setDiagnostics(described.own, code);
+          this.showAbove(described.context, composed);
           this.judge(described, code);
         }
         this.showInfo(answer.info || null, cursor.line, cursor.column);
@@ -1657,25 +1784,99 @@
       this.reported = false;
       this.status.textContent = lean.state === 'ready' ? 'Checking…' : (lean.status || 'Starting Lean…');
       const started = performance.now();
-      const result = await lean.compile(code, this.context(code));
+      const composed = this.composed(code);
+      const result = await lean.compile(code, composed.context);
       this.reported = true;
       this.running = false;
       this.runButton.disabled = false;
-      this.show(describe(result, code), code, performance.now() - started);
+      this.show(describe(result, code), code, performance.now() - started, composed);
     }
 
-    show({ own, context, error }, code, elapsed) {
+    show({ own, context, error }, code, elapsed, composed) {
       if (code === this.textarea.value) this.setDiagnostics(own, code);
       const items = this.messageItems(own.filter((m) => !m.isSilent && !isUnsolvedGoals(m)), true);
-      if (context.length) {
-        items.unshift(el('div', { class: 'sfl-message sfl-error' },
-          el('pre', {}, `The book code before this ${this.exercise.block ? 'code' : 'exercise'} did not check, ` +
-            'so this result cannot be trusted. ' +
-            'Please report it. First problem:\n' + context[0].data)));
-      }
       if (error) items.push(el('div', { class: 'sfl-message sfl-error' }, el('pre', {}, error)));
       this.messages.replaceChildren(...items);
+      this.showAbove(context, composed);
       if (code === this.textarea.value) this.judge({ own, context, error }, code, ` (${(elapsed / 1000).toFixed(1)} s)`);
+    }
+
+    // What this code was checked after that the book does not have: the
+    // reader's edits of blocks above it, and the errors Lean found in their
+    // code above it, each with a way to it and back to the book's code.  An
+    // error in the book's own code, with nothing of the reader's above it,
+    // is the book's to fix.
+    showAbove(errors, { context, spliced }) {
+      const edits = spliced.filter((s) => s.item.block);
+      const items = [];
+      const first = new Map();
+      let book = null;
+      for (const m of errors) {
+        const piece = spliced.find((s) => m.pos.line >= s.line && m.pos.line <= s.endLine);
+        if (!piece) book = book || m;
+        else if (!first.has(piece)) first.set(piece, m);
+      }
+      const shortened = (text) => {
+        const lines = text.split('\n');
+        return lines.length > 8 ? lines.slice(0, 8).join('\n') + '\n…' : text;
+      };
+      // The book's line where Lean stopped, under the first line of the
+      // command it is in.
+      const excerpt = (line) => {
+        const lines = context.split('\n');
+        let head = line - 1;
+        while (head > 0 && !/^[^\s|]/.test(lines[head])) head--;
+        const at = lines[line - 1] || '';
+        return head === line - 1 ? at : lines[head] + (head < line - 2 ? '\n  …\n' : '\n') + at;
+      };
+      const entry = (pieces, actions) => el('div', { class: 'sfl-message sfl-error' },
+        el('div', {}, ...pieces, el('div', { class: 'sfl-above-actions' }, ...actions)));
+      for (const [piece, m] of first) {
+        const line = m.pos.line - piece.line + 1;
+        items.push(entry([
+          el('div', { class: 'sfl-above-text' }, piece.item.block ? 'Your edit to ' : 'Your solution to exercise ', el('code', {}, piece.item.name),
+            piece.item.block ? ` above has an error, at its line ${line}:` : ` above no longer checks, at its line ${line}:`),
+          el('pre', {}, shortened(m.data)),
+        ], [
+          this.linkButton('Go to it', () => goToItem(piece.item)),
+          piece.item.block && this.linkButton('Reset it', () => resetBlock(this.data, piece.item)),
+        ]));
+      }
+      if (book && edits.length) {
+        items.push(entry([
+          el('div', { class: 'sfl-above-text' }, 'The book\'s code above does not check after your edits to ', ...nameList(edits), ':'),
+          el('pre', {}, excerpt(book.pos.line) + '\n\n' + shortened(book.data)),
+        ], []));
+      } else if (book) {
+        items.push(entry([el('pre', {},
+          `The book code before this ${this.exercise.block ? 'code' : 'exercise'} did not check, ` +
+          'so this result cannot be trusted. Please report it. First problem:\n' + shortened(book.data))],
+        []));
+      }
+      if (edits.length && !items.length) {
+        items.push(el('div', { class: 'sfl-above-note' }, 'Checked after your edits to ', ...nameList(edits), ' above.',
+          el('span', { class: 'sfl-above-actions' })));
+      }
+      if (edits.length) {
+        items[items.length - 1].querySelector('.sfl-above-actions').append(el('span', { class: 'sfl-above-reset' },
+          this.linkButton('Reset all blocks', () => resetAllBlocks(this.data))));
+      }
+      this.above.replaceChildren(...items);
+      this.above.hidden = !items.length;
+
+      // The edited blocks named, each a button that goes to it.
+      function nameList(pieces) {
+        const shown = pieces.slice(0, pieces.length > 4 ? 3 : 4);
+        const names = shown.map((s) => el('button', { class: 'sfl-link', type: 'button', onclick: () => goToItem(s.item) },
+          el('code', {}, s.item.name)));
+        const rest = pieces.length - shown.length;
+        if (rest) names.push(`${rest} other block${rest > 1 ? 's' : ''}`);
+        return names.flatMap((n, i) => (i === 0 ? [n] : [i === names.length - 1 ? ' and ' : ', ', n]));
+      }
+    }
+
+    linkButton(label, action) {
+      return el('button', { class: 'sfl-link', type: 'button', onclick: action }, label);
     }
 
     // Show a check's verdict.  An exercise's code that Lean accepts is saved
@@ -1683,11 +1884,15 @@
     // reader presses Run.  A later edit that breaks it keeps the saved version,
     // until Reset.
     judge(described, code, timing = '') {
-      const { solved, text } = verdict(described, this.exercise.block);
+      const block = this.exercise.block;
+      const { solved, text } = verdict(described, block, block && !this.exercise.standalone && !sameCode(code, this.exercise.code));
       this.reported = true;
       this.status.textContent = text + timing;
       this.root.classList.toggle('sfl-solved', solved);
-      if (solved && !this.exercise.block) save('solved:' + this.key, code);
+      if (solved && !block && load('solved:' + this.key) !== code) {
+        save('solved:' + this.key, code);
+        readerCodeChanged(this.exercise);
+      }
     }
 
     goTo(line, col) {
@@ -1701,12 +1906,165 @@
     }
   }
 
+  // ── What the reader has edited, and resetting it ──────────────────────────
+
+  // Each exercise's and block's tools on the page, by `reopenKey`.
+  const toolsByKey = new Map();
+
+  function reopenKey(item) {
+    return item.block ? 'block:' + item.index : item.name;
+  }
+
+  function isEdited(data, block) {
+    return blockDraft(data.chapter, block) != null;
+  }
+
+  function editedBlocks(data) {
+    return (data.blocks || []).filter((b) => isEdited(data, b));
+  }
+
+  // The reader's code for `item` changed or was reset: its tag shows whether
+  // it is edited now, and the open editors after it, which are checked with
+  // it, check again.  While the reader types in the editor of `item`, they
+  // wait until the reader leaves it; a change made anywhere else, a reset
+  // from a menu say, has them check again as soon as Lean gets to them.
+  function readerCodeChanged(item) {
+    const tools = toolsByKey.get(reopenKey(item));
+    if (tools) tools.update();
+    if (item.standalone) return;
+    const source = tools && tools.editor();
+    const typing = source && source.textarea === document.activeElement;
+    for (const editor of infoview.editors) {
+      if (editor.exercise.studentLine <= item.studentLine) continue;
+      if (typing) editor.markStale();
+      else editor.recheck();
+    }
+  }
+
+  // The editors that waited while the reader typed above them check again,
+  // except those below the editor the reader is typing in now.
+  function recheckStale() {
+    const here = [...infoview.editors].find((e) => e.textarea === document.activeElement);
+    for (const editor of infoview.editors) {
+      if (editor.stale && !(here && here.exercise.studentLine < editor.exercise.studentLine)) editor.recheck();
+    }
+  }
+
+  // Editors whose code above changed, waiting for Lean to check them again.
+  // Lean checks one thing at a time and keeps the compiled code above of only
+  // the last two editors it checked, so each of these usually checks the
+  // chapter up to its editor anew: about a second in LF, six in Hoare2.  Sent to the worker all at once, they
+  // would hold up whatever the reader asks next behind all of them, and they
+  // could not be withdrawn when the code above changed again.  So they wait
+  // here and go to Lean one at a time, when it has nothing else to do and the
+  // reader has not typed or left an editor for a moment, the one nearest the
+  // middle of the screen first.  One off screen waits until it is scrolled
+  // into view, as the reader may change the code above again before then.
+  const rechecks = {
+    waiting: new Set(),
+    running: null,
+    quietUntil: 0,
+    timer: null,
+    onScreen: new WeakSet(),
+    observer: null,
+
+    watch(editor) {
+      if (!this.observer) {
+        this.observer = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) this.onScreen.add(entry.target);
+            else this.onScreen.delete(entry.target);
+          }
+          this.next();
+        });
+      }
+      this.observer.observe(editor.root);
+    },
+
+    forget(editor) {
+      this.waiting.delete(editor);
+      if (this.observer) this.observer.unobserve(editor.root);
+    },
+
+    add(editor) {
+      this.waiting.add(editor);
+      editor.say('Waiting to check again with the code above. Lean checks one editor at a time.');
+      this.next();
+    },
+
+    // The reader typed, or left an editor and may go back to it: Lean stays
+    // free for them a moment longer before taking on another editor.
+    hold() {
+      this.quietUntil = performance.now() + 1000;
+      if (this.waiting.size) this.next();
+    },
+
+    next() {
+      clearTimeout(this.timer);
+      if (this.running || !this.waiting.size || lean.state !== 'ready' || lean.pending.size) return;
+      const wait = this.quietUntil - performance.now();
+      if (wait > 0) {
+        this.timer = setTimeout(() => this.next(), wait);
+        return;
+      }
+      const middle = innerHeight / 2;
+      let nearest = null;
+      let nearestDistance = Infinity;
+      for (const editor of this.waiting) {
+        if (!this.onScreen.has(editor.root)) continue;
+        const box = editor.root.getBoundingClientRect();
+        const distance = Math.max(box.top - middle, middle - box.bottom, 0);
+        if (distance < nearestDistance) {
+          nearest = editor;
+          nearestDistance = distance;
+        }
+      }
+      if (nearest) this.run(nearest);
+    },
+
+    async run(editor) {
+      this.waiting.delete(editor);
+      this.running = editor;
+      editor.say('Checking again with the code above…');
+      await editor.check();
+      this.running = null;
+      this.next();
+    },
+  };
+
+  // Open the editor of an exercise or block, if it is not open, and take the
+  // reader there.
+  function goToItem(item) {
+    const tools = toolsByKey.get(reopenKey(item));
+    if (tools) tools.show();
+  }
+
+  function resetBlock(data, block) {
+    const tools = toolsByKey.get(reopenKey(block));
+    const editor = tools && tools.editor();
+    if (editor) {
+      editor.reset();
+      return;
+    }
+    save('draft:' + keyOf(data.chapter, block), null);
+    readerCodeChanged(block);
+  }
+
+  function resetAllBlocks(data) {
+    const edited = editedBlocks(data);
+    if (edited.length > 1 &&
+        !confirm(`Reset the ${edited.length} blocks you edited in this chapter to the book's code?`)) return;
+    for (const block of edited) resetBlock(data, block);
+  }
+
   // ── The toolbar on each exercise and block ────────────────────────────────
 
   function closeMenus() {
     for (const list of document.querySelectorAll('.sfl-menu-list')) list.hidden = true;
   }
 
+  // `items` is called each time the menu opens, as what it offers changes
+  // with what the reader has edited.
   function menu(items) {
     const list = el('div', { class: 'sfl-menu-list', role: 'menu', hidden: '' });
     const toggle = el('button', {
@@ -1717,6 +2075,7 @@
         closeMenus();
         list.hidden = !wasHidden;
         if (list.hidden) return;
+        fill();
         // The list is placed on the window, under the button: the book clips
         // its code blocks, and a block's menu would be cut off at its edge.
         const r = toggle.getBoundingClientRect();
@@ -1724,14 +2083,18 @@
         list.style.right = document.documentElement.clientWidth - r.right + 'px';
       },
     }, '⋮');
-    for (const item of items) {
-      if (!item) continue;
-      const attrs = { class: 'sfl-menu-item', role: 'menuitem' };
-      const node = item.href
-        ? el('a', { ...attrs, href: item.href, target: '_blank', rel: 'noopener' }, item.label)
-        : el('button', { ...attrs, type: 'button', onclick: () => { list.hidden = true; item.action(); } }, item.label);
-      if (item.href && item.onopen) node.addEventListener('click', item.onopen);
-      list.append(node);
+    function fill() {
+      list.replaceChildren();
+      for (const item of items()) {
+        if (!item) continue;
+        const attrs = { class: 'sfl-menu-item', role: 'menuitem' };
+        if (item.disabled) attrs.disabled = '';
+        const node = item.href
+          ? el('a', { ...attrs, href: item.href, target: '_blank', rel: 'noopener' }, item.label)
+          : el('button', { ...attrs, type: 'button', onclick: () => { list.hidden = true; item.action(); } }, item.label);
+        if (item.href && item.onopen) node.addEventListener('click', item.onopen);
+        list.append(node);
+      }
     }
     return el('span', { class: 'sfl-menu' }, toggle, list);
   }
@@ -1751,33 +2114,29 @@
   // runs once it is closed.
   function toolbar(data, exercise, runsHere, label, place, onClose = () => {}) {
     let editor = null;
-    const reopen = exercise.block ? 'block:' + exercise.index : exercise.name;
+    const reopen = reopenKey(exercise);
     const openPlayground = (e) => {
       // Built on click: the URL holds the whole file, so it is not worth
       // building for every exercise on page load.
       e.currentTarget.href = playgroundUrl(data, exercise);
     };
-    const tryButton = runsHere
-      ? el('button', {
-        class: 'sfl-try', type: 'button',
-        onclick: async () => {
-          if (editor) {
-            editor.close();
-            editor = null;
-            tryButton.textContent = label;
-            onClose();
-            return;
-          }
-          if (!(await ensureIsolated(reopen))) {
-            tryButton.replaceWith(playgroundLink());
-            return;
-          }
-          lean.start(data);
-          editor = place();
-          tryButton.textContent = 'Close editor';
-        },
-      }, label)
-      : null;
+    async function toggle() {
+      if (editor) {
+        editor.close();
+        editor = null;
+        tryButton.textContent = label;
+        onClose();
+        return;
+      }
+      if (!(await ensureIsolated(reopen))) {
+        tryButton.replaceWith(playgroundLink());
+        return;
+      }
+      lean.start(data);
+      editor = place();
+      tryButton.textContent = 'Close editor';
+    }
+    const tryButton = runsHere ? el('button', { class: 'sfl-try', type: 'button', onclick: toggle }, label) : null;
     function playgroundLink() {
       const a = el('a', { class: 'sfl-try', href: PLAYGROUND, target: '_blank', rel: 'noopener' },
         'Open in the Lean playground ↗');
@@ -1785,17 +2144,44 @@
       return a;
     }
     const source = sourceUrl(data, exercise);
+    // Every block's menu offers both resets.  An exercise's offers to reset
+    // the blocks only once there is something to reset, as its own reset
+    // is the one it is for.
+    const resets = () => {
+      const edited = editedBlocks(data).length;
+      const all = (exercise.block || edited) && {
+        label: edited ? `Reset all blocks (${edited} edited)` : 'Reset all blocks',
+        action: () => resetAllBlocks(data),
+        disabled: !edited,
+      };
+      return exercise.block
+        ? [{ label: 'Reset this block', action: () => resetBlock(data, exercise), disabled: !isEdited(data, exercise) }, all]
+        : [{ label: 'Reset to the original code', action: () => editor && editor.reset() }, all];
+    };
     // In a block's corner the playground link would cover the code, and the
     // menu has it.
     const node = el('span', { class: 'sfl-toolbar' },
       tryButton || (exercise.block ? null : playgroundLink()),
-      menu([
+      menu(() => [
         { label: 'Open in the Lean playground ↗', href: PLAYGROUND, onopen: openPlayground },
         { label: 'Download as a .lean file', action: () => download(`${data.chapter}_${exercise.name}.lean`, playgroundFile(data, exercise)) },
         source && { label: 'View source on GitHub ↗', href: source },
-        runsHere && { label: 'Reset to the original code', action: () => editor && editor.reset() },
+        ...(runsHere ? resets() : []),
       ]));
-    return { node, reopen, open: () => tryButton && tryButton.click() };
+    const tools = {
+      node,
+      open: () => tryButton && tryButton.click(),
+      editor: () => editor,
+      update: () => {},
+      async show() {
+        if (!editor && tryButton) await toggle();
+        if (!editor) return;
+        editor.root.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        editor.textarea.focus({ preventScroll: true });
+      },
+    };
+    toolsByKey.set(reopen, tools);
+    return tools;
   }
 
   function attach(data, exercise, box, runsHere) {
@@ -1825,6 +2211,16 @@
       editor.bar.append(tools.node);
       return editor;
     }, () => node.append(tools.node));
+    // The page shows the book's code; the tag says the reader's version is
+    // what the code after it is checked with.
+    const tag = el('button', {
+      class: 'sfl-edited-tag', type: 'button', onclick: () => tools.show(),
+      title: block.standalone ? 'You changed this code.'
+        : 'You changed this code. The code after it is checked with your version.',
+    }, 'Edited');
+    tools.update = () => { tag.hidden = !isEdited(data, block); };
+    tools.update();
+    tools.node.prepend(tag);
     tools.node.classList.add('sfl-block-tools');
     node.classList.add('sfl-editable');
     node.append(tools.node);
@@ -1855,30 +2251,28 @@
     }
     const byName = new Map(data.exercises.map((e) => [e.name, e]));
     const runsHere = canRunLean();
-    const openers = new Map();
     for (const box of boxes) {
       const label = box.querySelector('.exercise-name');
       const name = label && label.textContent.trim().replace(/^\(|\)$/g, '');
       const exercise = byName.get(name);
-      const tools = exercise && attach(data, exercise, box, runsHere);
-      if (tools) openers.set(tools.reopen, tools.open);
+      if (exercise) attach(data, exercise, box, runsHere);
     }
-    for (const block of data.blocks ?? []) {
+    data.blocks = data.blocks || [];
+    for (const block of data.blocks) {
+      block.block = true;
       // The page and its data come from one build, so a block whose text is
       // not the data's is left as the book shows it.
       const node = blocks[block.index];
-      if (!node || blockText(node) + '\n' !== block.code) continue;
-      const tools = attachBlock(data, { ...block, block: true }, node, runsHere);
-      openers.set(tools.reopen, tools.open);
+      if (node && blockText(node) + '\n' === block.code) attachBlock(data, block, node, runsHere);
     }
     document.addEventListener('click', closeMenus);
     // A menu is placed on the window, so it would stay put as the page moves.
     document.addEventListener('scroll', closeMenus, { capture: true, passive: true });
     // Back from the one-time reload that turned on cross-origin isolation.
     const reopen = sessionStorage.getItem(STORE + 'reopen');
-    if (reopen && openers.has(reopen)) {
+    if (reopen && toolsByKey.has(reopen)) {
       sessionStorage.removeItem(STORE + 'reopen');
-      openers.get(reopen)();
+      toolsByKey.get(reopen).open();
     }
   }
 
